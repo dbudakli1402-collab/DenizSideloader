@@ -1,0 +1,27 @@
+name: Bug report
+description: Report a problem with Deniz Sideloader
+body:
+  - type: input
+    attributes:
+      label: Version
+      placeholder: e.g. 0.1.0 (see About page)
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Windows version
+      options: [Windows 11, Windows 10]
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Logs (redacted)
+      description: Paste relevant lines from %APPDATA%/DenizSideloader/logs. NEVER paste Apple passwords, tokens, or private keys.
+    validations:
+      required: false

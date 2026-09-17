@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint
+        run: python -m ruff check app tests
+
+      - name: Format check
+        run: python -m ruff format --check app tests
+
+      - name: Typecheck
+        run: python -m mypy app
+
+      - name: Unit tests
+        run: python -m pytest tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+      - name: Secret scan (no credentials in repo)
+        shell: pwsh
+        run: |
+          $bad = Get-ChildItem -Recurse -File -Include *.pem,*.key,*.p12,*.pfx,*.mobileprovision,.env,credentials.json,secrets.json -Exclude README.md |
+            Where-Object { $_.FullName -notmatch '\.git[\\/]' }
+          if ($bad) { $bad | ForEach-Object { Write-Error "Blocked file: $($_.FullName)" }; exit 1 }
+          # crude content scan for accidental password assignments
+          $hits = Select-String -Path app,tests -Pattern 'password\s*=\s*["'']([^"'']+)["'']' -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.Line -notmatch 'REDACTED|hunter2|sanitize|test_' }
+          if ($hits) { $hits | ForEach-Object { Write-Error $_.Line }; exit 1 }
+          Write-Host "secret scan clean"
+
+      - name: Packaging smoke test (compile + import)
+        run: |
+          python -m compileall -q app
+          python -c "import app.core.config, app.ipa.parser, app.downloads.manager, app.installation.service, app.signing.service; print('imports ok')"
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt pyinstaller
+      - name: Build Windows exe
+        run: python scripts/build_exe.py
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DenizSideloader-windows
+          path: release/

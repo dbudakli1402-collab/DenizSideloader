@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a84ff"/>
+      <stop offset="1" stop-color="#5e5ce6"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="#14161c"/>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#bg)" opacity="0.18"/>
+  <!-- stylized iPhone -->
+  <rect x="88" y="44" width="80" height="150" rx="18" fill="none" stroke="url(#bg)" stroke-width="10"/>
+  <line x1="118" y1="58" x2="138" y2="58" stroke="#8b919c" stroke-width="6" stroke-linecap="round"/>
+  <!-- download arrow into the phone -->
+  <line x1="128" y1="86" x2="128" y2="140" stroke="#ffffff" stroke-width="11" stroke-linecap="round"/>
+  <polyline points="104,120 128,144 152,120" fill="none" stroke="#ffffff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- home indicator -->
+  <line x1="118" y1="178" x2="138" y2="178" stroke="#8b919c" stroke-width="6" stroke-linecap="round"/>
+</svg>

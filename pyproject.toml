@@ -1,0 +1,88 @@
+[project]
+name = "deniz-sideloader"
+version = "0.1.0"
+description = "A modern open-source desktop application for managing and legitimately sideloading IPA applications to your own iPhone."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Deniz Sideloader Contributors" }]
+keywords = ["ios", "sideload", "ipa", "iphone", "qt"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Win32 (MS Windows)",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3",
+  "Topic :: Utilities",
+]
+dependencies = [
+  "PySide6>=6.6.0",
+  "requests>=2.31.0",
+  "keyring>=25.0.0",
+  "pywin32-ctypes>=0.2.2; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-qt>=4.3.0",
+  "pytest-cov>=5.0.0",
+  "ruff>=0.4.0",
+  "mypy>=1.10.0",
+  "pyinstaller>=6.0.0",
+]
+device = [
+  "pymobiledevice3>=4.20.0",
+]
+
+[project.scripts]
+deniz-sideloader = "app.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+src = ["."]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S", "C4", "DTZ", "ASYNC", "G", "N"]
+ignore = [
+  "S101",   # asserts are the point of tests
+  "DTZ005", # naive datetime use is fine for local timestamps
+  "S110",   # try/except/pass is intentional in backend probing code
+  "S112",   # try/except/continue is intentional when polling providers
+  "DTZ011", # date.today() without tz is correct for expiry-day math
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*" = ["S101", "S105", "S108", "ASYNC", "E501"]
+"scripts/**/*" = ["S102", "S108"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+show_error_codes = true
+plugins = []
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = false
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --cov=app --cov-report=term-missing"
+markers = [
+  "gui: marks tests requiring a display (deselect with '-m \"not gui\"')",
+]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/ui/*", "tests/*"]

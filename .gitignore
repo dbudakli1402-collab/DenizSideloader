@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# PyInstaller
+*.spec
+release/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.cover
+
+# Type checkers / linters
+.mypy_cache/
+.ruff_cache/
+
+# Qt / app runtime (user-local, never commit)
+# (App data lives in %APPDATA%/DenizSideloader, not in the repo)
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets — never commit any of these
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+*.ipa
+!tests/fixtures/*.ipa
+credentials.json
+secrets.json
