@@ -32,7 +32,14 @@
 - Apple Mobile Device support: iTunes (apple.com) or Apple Devices app
 - For real installs: the device backend (pymobiledevice3) is bundled; just add your own signing assets
 
-## Installation
+## Installation (Benutzer)
+
+Auf der [Release-Seite](https://github.com/dbudakli1402-collab/DenizSideloader/releases) gibt es zwei Varianten:
+
+- **DenizSideloader-x.y.z-Setup.exe** — Installer mit Assistent (Startmenü, Deinstallation, keine Admin-Rechte nötig, installiert nach `%LOCALAPPDATA%\Programs\DenizSideloader`)
+- **DenizSideloader-x.y.z-win64.zip** — portable Version: entpacken, `DenizSideloader.exe` starten
+
+## Installation (aus dem Quellcode)
 
 ```powershell
 cd DenizSideloader
