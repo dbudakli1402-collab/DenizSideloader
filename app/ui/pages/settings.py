@@ -1,8 +1,8 @@
-"""Settings page: General / iPhone / Downloads / Security / Signing."""
+"""Einstellungen: GENERAL / DEVICE / INSTALLATION / NOTIFICATIONS / ADVANCED / ABOUT."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -16,155 +16,206 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app import __app_name__, __version__
 from app.storage.settings import AppSettings
-from app.ui.widgets import Card, secondary_button
+from app.ui import design as D
 
 
 class SettingsPage(QWidget):
     save_requested = Signal()
     clear_credentials = Signal()
     clear_logs = Signal()
+    clear_cache = Signal()
     browse_downloads = Signal()
     browse_provisioning = Signal()
+    open_github = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 24, 28, 24)
-        layout.setSpacing(12)
-        head = QLabel("Settings")
-        head.setObjectName("title")
-        layout.addWidget(head)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(26, 22, 26, 22)
+        root.setSpacing(14)
+        head = QLabel("Einstellungen")
+        head.setObjectName("pageTitle")
+        root.addWidget(head)
 
-        # General
-        self.general_card = Card()
-        self.general_card.add(_h("General"))
-        form = QFormLayout()
-        self.cb_autostart = QCheckBox("Start with Windows")
-        self.cb_tray = QCheckBox("Minimize to tray")
+        # GENERAL
+        c, lay = D.card()
+        lay.addWidget(_section("Allgemein"))
+        f = QFormLayout()
+        self.cb_autostart = QCheckBox("Mit Windows starten")
+        self.cb_tray = QCheckBox("In den Tray minimieren")
+        self.cb_anim = QCheckBox("Animationen")
         self.combo_theme = QComboBox()
-        self.combo_theme.addItems(["dark", "light", "system"])
+        self.combo_theme.addItems(["dark", "light"])
         self.combo_lang = QComboBox()
-        self.combo_lang.addItems(["en", "de"])
-        form.addRow(self.cb_autostart)
-        form.addRow(self.cb_tray)
-        form.addRow("Theme", self.combo_theme)
-        form.addRow("Language", self.combo_lang)
-        self.general_card.add_layout(form)
-        layout.addWidget(self.general_card)
+        self.combo_lang.addItems(["de", "en"])
+        f.addRow(self.cb_autostart)
+        f.addRow(self.cb_tray)
+        f.addRow(self.cb_anim)
+        f.addRow("Theme", self.combo_theme)
+        f.addRow("Sprache", self.combo_lang)
+        lay.addLayout(f)
+        root.addWidget(c)
 
-        # iPhone
-        self.iphone_card = Card()
-        self.iphone_card.add(_h("iPhone"))
-        form2 = QFormLayout()
-        self.cb_autodetect = QCheckBox("Auto-detect devices")
-        self.cb_confirm = QCheckBox("Confirm before installation")
-        form2.addRow(self.cb_autodetect)
-        form2.addRow(self.cb_confirm)
-        self.iphone_card.add_layout(form2)
-        layout.addWidget(self.iphone_card)
+        # DEVICE
+        c, lay = D.card()
+        lay.addWidget(_section("Gerät"))
+        f = QFormLayout()
+        self.cb_autodetect = QCheckBox("Automatisch verbinden")
+        self.cb_confirm = QCheckBox("Vor Installation bestätigen")
+        self.cb_checkconn = QCheckBox("Verbindung prüfen")
+        f.addRow(self.cb_autodetect)
+        f.addRow(self.cb_confirm)
+        f.addRow(self.cb_checkconn)
+        lay.addLayout(f)
+        root.addWidget(c)
 
-        # Downloads
-        self.dl_card = Card()
-        self.dl_card.add(_h("Downloads"))
-        form3 = QFormLayout()
+        # INSTALLATION
+        c, lay = D.card()
+        lay.addWidget(_section("Installation"))
+        f = QFormLayout()
         row_dl = QHBoxLayout()
         self.edit_folder = QLineEdit()
-        self.btn_folder = secondary_button("Browse")
+        self.btn_folder = QPushButton("Durchsuchen")
+        self.btn_folder.setObjectName("ghost")
         self.btn_folder.clicked.connect(self.browse_downloads.emit)
         row_dl.addWidget(self.edit_folder, 1)
         row_dl.addWidget(self.btn_folder)
         self.spin_concurrent = QSpinBox()
         self.spin_concurrent.setRange(1, 8)
-        self.cb_autoimport = QCheckBox("Automatically import downloaded IPAs")
-        form3.addRow("Download folder", row_dl)
-        form3.addRow("Concurrent downloads", self.spin_concurrent)
-        form3.addRow(self.cb_autoimport)
-        self.dl_card.add_layout(form3)
-        layout.addWidget(self.dl_card)
-
-        # Signing
-        self.sign_card = Card()
-        self.sign_card.add(_h("Signing"))
-        form4 = QFormLayout()
+        self.cb_autoimport = QCheckBox("Heruntergeladene IPAs automatisch importieren")
+        self.cb_keepipa = QCheckBox("IPA nach Installation behalten")
+        f.addRow("Download-Ordner", row_dl)
+        f.addRow("Gleichzeitige Downloads", self.spin_concurrent)
+        f.addRow(self.cb_autoimport)
+        f.addRow(self.cb_keepipa)
+        lay.addLayout(f)
+        # signing
+        lay.addWidget(_section("Signierung"))
+        f2 = QFormLayout()
         self.combo_account = QComboBox()
         self.combo_account.addItems(["free", "paid"])
         row_prov = QHBoxLayout()
         self.edit_prov = QLineEdit()
-        self.edit_prov.setPlaceholderText("Folder with .mobileprovision files")
-        self.btn_prov = secondary_button("Browse")
+        self.edit_prov.setPlaceholderText("Ordner mit .mobileprovision-Dateien")
+        self.btn_prov = QPushButton("Durchsuchen")
+        self.btn_prov.setObjectName("ghost")
         self.btn_prov.clicked.connect(self.browse_provisioning.emit)
         row_prov.addWidget(self.edit_prov, 1)
         row_prov.addWidget(self.btn_prov)
         self.edit_appleid = QLineEdit()
-        self.edit_appleid.setPlaceholderText("Apple ID email (username hint only, never the password)")
-        form4.addRow("Account type", self.combo_account)
-        form4.addRow("Provisioning folder", row_prov)
-        form4.addRow("Apple ID", self.edit_appleid)
+        self.edit_appleid.setPlaceholderText("Apple-ID (nur Benutzername, nie das Passwort)")
+        f2.addRow("Kontotyp", self.combo_account)
+        f2.addRow("Provisioning-Ordner", row_prov)
+        f2.addRow("Apple-ID", self.edit_appleid)
+        lay.addLayout(f2)
         expl = QLabel(
-            "Why sign in? iOS only runs apps signed with your own Apple Developer "
-            "certificate. Free accounts expire after 7 days. Your password is never "
-            "stored \u2014 only the username hint goes to Windows Credential Manager."
+            "Warum signieren? iOS startet nur Apps mit deinem eigenen Apple-Zertifikat. "
+            "Kostenlose Accounts laufen nach 7 Tagen ab. Dein Passwort wird nirgends gespeichert."
         )
         expl.setWordWrap(True)
         expl.setObjectName("muted")
-        self.sign_card.add_layout(form4)
-        self.sign_card.add(expl)
-        layout.addWidget(self.sign_card)
+        lay.addWidget(expl)
+        root.addWidget(c)
 
-        # Security
-        self.sec_card = Card()
-        self.sec_card.add(_h("Security"))
-        row_sec = QHBoxLayout()
-        self.btn_clear_creds: QPushButton = secondary_button("Clear cached credentials")
+        # NOTIFICATIONS
+        c, lay = D.card()
+        lay.addWidget(_section("Mitteilungen"))
+        self.cb_n_success = QCheckBox("Erfolgreiche Installation")
+        self.cb_n_error = QCheckBox("Fehler")
+        self.cb_n_download = QCheckBox("Downloads")
+        for cb in (self.cb_n_success, self.cb_n_error, self.cb_n_download):
+            lay.addWidget(cb)
+        root.addWidget(c)
+
+        # ADVANCED
+        c, lay = D.card()
+        lay.addWidget(_section("Erweitert"))
+        self.cb_debug = QCheckBox("Debug-Modus (ausführliche Logs)")
+        lay.addWidget(self.cb_debug)
+        row = QHBoxLayout()
+        self.btn_clear_creds = QPushButton("Gespeicherte Zugangsdaten löschen")
+        self.btn_clear_creds.setObjectName("ghost")
         self.btn_clear_creds.clicked.connect(self.clear_credentials.emit)
-        self.btn_clear_logs: QPushButton = secondary_button("Clear logs")
+        self.btn_clear_logs = QPushButton("Logs löschen")
+        self.btn_clear_logs.setObjectName("ghost")
         self.btn_clear_logs.clicked.connect(self.clear_logs.emit)
-        row_sec.addWidget(self.btn_clear_creds)
-        row_sec.addWidget(self.btn_clear_logs)
-        row_sec.addStretch(1)
-        note = QLabel("Credential storage: OS keychain (Windows Credential Manager). No telemetry.")
+        self.btn_clear_cache = QPushButton("Cache löschen")
+        self.btn_clear_cache.setObjectName("ghost")
+        self.btn_clear_cache.clicked.connect(self.clear_cache.emit)
+        row.addWidget(self.btn_clear_creds)
+        row.addWidget(self.btn_clear_logs)
+        row.addWidget(self.btn_clear_cache)
+        row.addStretch(1)
+        lay.addLayout(row)
+        note = QLabel("Zugangsdaten: OS-Schlüsselbund. Keine Telemetrie.")
         note.setObjectName("muted")
-        self.sec_card.add(note)
-        self.sec_card.add_layout(row_sec)
-        layout.addWidget(self.sec_card)
+        lay.addWidget(note)
+        root.addWidget(c)
 
-        self.btn_save: QPushButton = QPushButton("Save")
+        # ABOUT
+        c, lay = D.card()
+        lay.addWidget(_section("Über"))
+        about = QLabel(f"{__app_name__} · v{__version__}\nOpen Source · MIT-Lizenz")
+        about.setObjectName("muted")
+        lay.addWidget(about)
+        b_gh = QPushButton("GitHub öffnen")
+        b_gh.setObjectName("ghost")
+        b_gh.clicked.connect(self.open_github.emit)
+        lay.addWidget(b_gh, alignment=Qt.AlignmentFlag.AlignLeft)
+        root.addWidget(c)
+
+        self.btn_save = QPushButton("Speichern")
         self.btn_save.setObjectName("primary")
         self.btn_save.clicked.connect(self.save_requested.emit)
-        layout.addWidget(self.btn_save)
-        layout.addStretch(1)
+        root.addWidget(self.btn_save, alignment=Qt.AlignmentFlag.AlignLeft)
+        root.addStretch(1)
 
     def load(self, s: AppSettings) -> None:
         self.cb_autostart.setChecked(s.general.start_with_windows)
         self.cb_tray.setChecked(s.general.minimize_to_tray)
-        self.combo_theme.setCurrentText(s.general.theme)
+        self.cb_anim.setChecked(s.general.animations)
+        self.combo_theme.setCurrentText(s.general.theme if s.general.theme in ("dark", "light") else "dark")
         self.combo_lang.setCurrentText(s.general.language)
         self.cb_autodetect.setChecked(s.iphone.auto_detect)
         self.cb_confirm.setChecked(s.iphone.confirm_before_install)
+        self.cb_checkconn.setChecked(s.iphone.check_connection)
         self.edit_folder.setText(s.downloads.folder)
         self.spin_concurrent.setValue(s.downloads.concurrent)
         self.cb_autoimport.setChecked(s.downloads.auto_import)
+        self.cb_keepipa.setChecked(s.install.keep_ipa)
         self.combo_account.setCurrentText(s.signing.account_type)
         self.edit_prov.setText(s.signing.provisioning_dir)
         self.edit_appleid.setText(s.signing.apple_id_username)
+        self.cb_n_success.setChecked(s.notify.on_success)
+        self.cb_n_error.setChecked(s.notify.on_error)
+        self.cb_n_download.setChecked(s.notify.on_download)
+        self.cb_debug.setChecked(s.advanced.debug_mode)
 
     def collect(self, s: AppSettings) -> None:
         s.general.start_with_windows = self.cb_autostart.isChecked()
         s.general.minimize_to_tray = self.cb_tray.isChecked()
+        s.general.animations = self.cb_anim.isChecked()
         s.general.theme = self.combo_theme.currentText()
         s.general.language = self.combo_lang.currentText()
         s.iphone.auto_detect = self.cb_autodetect.isChecked()
         s.iphone.confirm_before_install = self.cb_confirm.isChecked()
+        s.iphone.check_connection = self.cb_checkconn.isChecked()
         s.downloads.folder = self.edit_folder.text().strip()
         s.downloads.concurrent = self.spin_concurrent.value()
         s.downloads.auto_import = self.cb_autoimport.isChecked()
+        s.install.keep_ipa = self.cb_keepipa.isChecked()
         s.signing.account_type = self.combo_account.currentText()
         s.signing.provisioning_dir = self.edit_prov.text().strip()
         s.signing.apple_id_username = self.edit_appleid.text().strip()
+        s.notify.on_success = self.cb_n_success.isChecked()
+        s.notify.on_error = self.cb_n_error.isChecked()
+        s.notify.on_download = self.cb_n_download.isChecked()
+        s.advanced.debug_mode = self.cb_debug.isChecked()
 
 
-def _h(text: str) -> QLabel:
-    label = QLabel(text)
-    label.setObjectName("cardTitle")
+def _section(text: str) -> QLabel:
+    label = QLabel(text.upper())
+    label.setObjectName("section")
     return label

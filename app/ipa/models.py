@@ -19,6 +19,8 @@ class IpaInfo:
     icon_path: str = ""
     sha256: str = ""
     status: str = "ready"  # ready | installing | installed | error
+    category: str = "Alle"
+    added_ts: str = ""
     extra: dict[str, str] = field(default_factory=dict)
 
     @property

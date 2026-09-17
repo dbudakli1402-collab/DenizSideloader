@@ -157,6 +157,45 @@ class PyMobileDeviceProvider(DeviceProvider):
             log.warning("installed-apps query failed: %s", exc)
             return []
 
+    def get_device_details(self, udid: str) -> dict[str, Any]:
+        """Extra device facts (storage, battery, serial). Only real values.
+
+        Returns a dict with whichever keys the backend could actually read —
+        the UI shows a fact only when its key is present.
+        """
+
+        async def _query() -> dict[str, Any]:
+            from pymobiledevice3.lockdown import create_using_usbmux
+
+            out: dict[str, Any] = {}
+            lockdown = await create_using_usbmux(udid)
+            total = await lockdown.get_value("com.apple.disk_usage", "TotalDiskCapacity")
+            avail = await lockdown.get_value("com.apple.disk_usage", "AmountDataAvailable")
+            if isinstance(total, int) and total > 0:
+                out["storage_total"] = total
+            if isinstance(avail, int) and avail >= 0:
+                out["storage_available"] = avail
+            batt = await lockdown.get_value("com.apple.mobile.battery", "BatteryCurrentCapacity")
+            if isinstance(batt, int) and 0 <= batt <= 100:
+                out["battery_pct"] = batt
+            charging = await lockdown.get_value("com.apple.mobile.battery", "BatteryIsCharging")
+            if isinstance(charging, bool):
+                out["charging"] = charging
+            serial = await lockdown.get_value("", "SerialNumber")
+            if serial:
+                out["serial"] = str(serial)
+            ptype = await lockdown.get_value("", "ProductType")
+            if ptype:
+                out["product_type"] = str(ptype)
+            return out
+
+        try:
+            result = _run(_query())
+            return result if isinstance(result, dict) else {}
+        except Exception as exc:
+            log.warning("device details unavailable: %s", exc)
+            return {}
+
     def help_text(self) -> str:
         return (
             "pymobiledevice3 backend (open-source, bundled in the release build).\n"

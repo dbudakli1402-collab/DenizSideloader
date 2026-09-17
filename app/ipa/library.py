@@ -12,6 +12,8 @@ from app.ipa.models import IpaInfo
 from app.ipa.parser import parse_ipa
 from app.security.validation import is_safe_ipa_path, sanitize_filename
 
+CATEGORIES = ["Alle", "Spiele", "Social", "Tools", "Entertainment", "Produktivität", "Bildung"]
+
 log = get_logger("ipa.library")
 
 
@@ -78,6 +80,10 @@ class IpaLibrary:
             info.file_name = dest.name
             info.file_size = dest.stat().st_size
         key = info.bundle_id + "|" + Path(info.path).name
+        if not info.added_ts:
+            from datetime import datetime
+
+            info.added_ts = datetime.now().isoformat(timespec="seconds")
         self._items[key] = info
         self.save()
         log.info("imported IPA: %s (%s)", info.app_name, info.bundle_id)
@@ -98,3 +104,46 @@ class IpaLibrary:
             if item.bundle_id == bundle_id:
                 return item
         return None
+
+    def set_category(self, info: IpaInfo, category: str) -> IpaInfo:
+        if category not in CATEGORIES:
+            category = "Alle"
+        key = info.bundle_id + "|" + Path(info.path).name
+        current = self._items.get(key, info)
+        current.category = category
+        self._items[key] = current
+        self.save()
+        return current
+
+    def rename(self, info: IpaInfo, new_name: str) -> IpaInfo:
+        """Rename the library file safely. Returns updated info."""
+        from datetime import datetime
+
+        from app.security.validation import sanitize_filename
+
+        old_key = info.bundle_id + "|" + Path(info.path).name
+        current = self._items.get(old_key, info)
+        safe = sanitize_filename(new_name)
+        if not safe.lower().endswith(".ipa"):
+            safe += ".ipa"
+        dest = self.library_dir / safe
+        counter = 1
+        while dest.exists() and dest.resolve() != Path(current.path).resolve():
+            dest = self.library_dir / f"{Path(safe).stem} ({counter}).ipa"
+            counter += 1
+        Path(current.path).rename(dest)
+        current.path = str(dest)
+        current.file_name = dest.name
+        current.file_size = dest.stat().st_size
+        self._items.pop(old_key, None)
+        self._items[current.bundle_id + "|" + dest.name] = current
+        self.save()
+        log.info("renamed IPA to %s at %s", dest.name, datetime.now().isoformat(timespec="seconds"))
+        return current
+
+    def counts_by_category(self) -> dict[str, int]:
+        counts = dict.fromkeys(CATEGORIES, 0)
+        for item in self._items.values():
+            counts[item.category if item.category in counts else "Alle"] += 1
+        counts["Alle"] = len(self._items)
+        return counts

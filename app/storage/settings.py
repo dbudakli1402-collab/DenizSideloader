@@ -12,13 +12,15 @@ class GeneralSettings:
     start_with_windows: bool = False
     minimize_to_tray: bool = True
     theme: str = "dark"  # dark | light | system
-    language: str = "en"  # en | de
+    language: str = "de"  # de | en
+    animations: bool = True
 
 
 @dataclass
 class IphoneSettings:
     auto_detect: bool = True
     confirm_before_install: bool = True
+    check_connection: bool = True
 
 
 @dataclass
@@ -42,12 +44,33 @@ class SigningSettings:
 
 
 @dataclass
+class InstallSettings:
+    keep_ipa: bool = True
+    auto_update_check: bool = False
+
+
+@dataclass
+class NotifySettings:
+    on_success: bool = True
+    on_error: bool = True
+    on_download: bool = True
+
+
+@dataclass
+class AdvancedSettings:
+    debug_mode: bool = False
+
+
+@dataclass
 class AppSettings:
     general: GeneralSettings = field(default_factory=GeneralSettings)
     iphone: IphoneSettings = field(default_factory=IphoneSettings)
     downloads: DownloadSettings = field(default_factory=DownloadSettings)
     security: SecuritySettings = field(default_factory=SecuritySettings)
     signing: SigningSettings = field(default_factory=SigningSettings)
+    install: InstallSettings = field(default_factory=InstallSettings)
+    notify: NotifySettings = field(default_factory=NotifySettings)
+    advanced: AdvancedSettings = field(default_factory=AdvancedSettings)
     first_launch_done: bool = False
     recent_ipas: list[str] = field(default_factory=list)
 
@@ -55,7 +78,7 @@ class AppSettings:
         if self.general.theme not in ("dark", "light", "system"):
             self.general.theme = "dark"
         if self.general.language not in ("en", "de"):
-            self.general.language = "en"
+            self.general.language = "de"
         self.downloads.concurrent = max(1, min(8, int(self.downloads.concurrent or 3)))
         if self.signing.account_type not in ("free", "paid"):
             self.signing.account_type = "free"
@@ -101,6 +124,12 @@ class SettingsStore:
             s.security = SecuritySettings(**{k: sec[k] for k in SecuritySettings.__dataclass_fields__ if k in sec})
             sg = raw.get("signing", {})
             s.signing = SigningSettings(**{k: sg[k] for k in SigningSettings.__dataclass_fields__ if k in sg})
+            ins = raw.get("install", {})
+            s.install = InstallSettings(**{k: ins[k] for k in InstallSettings.__dataclass_fields__ if k in ins})
+            nt = raw.get("notify", {})
+            s.notify = NotifySettings(**{k: nt[k] for k in NotifySettings.__dataclass_fields__ if k in nt})
+            ad = raw.get("advanced", {})
+            s.advanced = AdvancedSettings(**{k: ad[k] for k in AdvancedSettings.__dataclass_fields__ if k in ad})
             s.first_launch_done = bool(raw.get("first_launch_done", False))
             rec = raw.get("recent_ipas", [])
             s.recent_ipas = [str(x) for x in rec if isinstance(x, str)][:16]

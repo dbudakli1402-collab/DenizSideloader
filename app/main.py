@@ -26,8 +26,8 @@ def main() -> int:
     from app.signing.models import SigningKind
     from app.signing.service import SigningService
     from app.storage.settings import SettingsStore
+    from app.ui.design import apply_theme
     from app.ui.main_window import MainWindow
-    from app.ui.theme import apply_theme
 
     config = AppConfig(
         app_data_dir=DEFAULT_CONFIG.app_data_dir,
@@ -37,10 +37,12 @@ def main() -> int:
         library_dir=DEFAULT_CONFIG.library_dir,
     )
     config.ensure_dirs()
-    logger = setup_logging(config.log_dir)
-    logger.info("starting %s v%s", __app_name__, __version__)
-
     store = SettingsStore(config.app_data_dir / "settings.json")
+    import logging as _logging
+
+    level = _logging.DEBUG if store.settings.advanced.debug_mode else _logging.INFO
+    logger = setup_logging(config.log_dir, level=level)
+    logger.info("starting %s v%s", __app_name__, __version__)
     s = store.settings
     if s.downloads.folder:
         config.download_dir = Path(s.downloads.folder)

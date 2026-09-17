@@ -28,6 +28,7 @@ class InstallDialog(QDialog):
             layout.addWidget(lbl)
             self.step_labels[step] = lbl
         self.bar = QProgressBar()
+        self.bar.setObjectName("bar")
         self.bar.setRange(0, 100)
         layout.addWidget(self.bar)
         self.hint = QLabel("Do not disconnect your iPhone.")

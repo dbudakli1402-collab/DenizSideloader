@@ -11,16 +11,19 @@
 
 ## Features
 
-- **Home** — connection status card, big **Choose IPA** / **Download IPA** actions, recent IPAs
-- **IPA Library** — import, drag & drop, metadata (name, bundle ID, version, size, icon), install, delete
-- **My iPhone** — USB detection, device name, iOS version, Trust guidance
-- **Installed Apps** — backend-backed listing (honest "unavailable" state otherwise)
-- **Downloads** — direct IPA URLs with progress, speed, ETA, pause/cancel, SHA-256, auto-import
-- **Installation workflow** — Select → Analyze → Detect → Signing check → Prepare → Sign → Install → Verify → Done, with live progress dialog
-- **Modular signing** — free (7-day) / paid Apple Developer + local provisioning files; passwords never stored
-- **Settings** — General, iPhone, Downloads, Security, Signing; OS-keychain credentials; autostart; tray
-- **Security** — HTTPS-only, cert validation, path-traversal protection, redacted logs, no telemetry
-- Dark, Apple-inspired native UI (Qt, no Chromium/Electron overhead), first-launch wizard
+- **Home-Dashboard** — Hero, Gerätestatus mit Speicher/Akku, Drag-&-Drop-Installer, Schnellzugriff, Aktivitäten
+- **Apps** — installierte + Bibliotheks-Apps mit Status (Grid/Liste, Suche, Details)
+- **IPA-Dateien** — Import, Drag & Drop, Suche, Filter, Sortierung, Kontextmenü (Installieren, Umbenennen, Ordner öffnen, Kategorie, Löschen)
+- **Geräte** — USB-Erkennung, iOS-Version, Trust-Hinweise, echter Speicher/Akku, Serieninfos
+- **App-Bibliothek** — Sammlung nach Kategorien (Alle, Spiele, Social, Tools, Entertainment, Produktivität, Bildung)
+- **Downloads** — direkte IPA-URLs mit Fortschritt, Speed, ETA, Pause/Fortsetzen/Abbrechen, SHA-256, Auto-Import
+- **Verlauf** — Timeline aller Installationen, Downloads, Geräteereignisse und Fehler (filterbar)
+- **Globale Suche** — `Strg + K` über Apps, Dateien und Geräte
+- **Installation** — Select → Analyze → Detect → Signing → Install → Verify → Done, mit Live-Dialog
+- **Signierung** — kostenlos (7 Tage) / bezahlt / lokale Profile; Passwörter werden nie gespeichert
+- **Mitteilungen** — animierte Toasts (Erfolg/Fehler/Info)
+- **Einstellungen** — Allgemein, Gerät, Installation, Mitteilungen, Erweitert, Über (komplett deutsch)
+- Dark Navy Premium-Design mit Hell/Dunkel-Umschalter, einklappbarer Sidebar, Tastaturkürzel (`Strg+K`, `Strg+1–8`, `Esc`)
 
 ## Requirements
 
