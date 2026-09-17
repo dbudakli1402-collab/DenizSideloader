@@ -5,8 +5,8 @@
 1. Windows 10/11, Python 3.10+.
 2. Install Apple Mobile Device support: **iTunes (from apple.com)** or the
    **Apple Devices** app from the Microsoft Store.
-3. `pip install DenizSideloader[device]` for the real device backend
-   (optional but needed for actual installs).
+3. The device backend (pymobiledevice3, open source) is bundled with the app —
+   no extra install needed.
 4. Run `python -m app` from the `DenizSideloader` folder, or build
    `release/DenizSideloader.exe` via `python scripts/build_exe.py`
    (windowed — no console during normal use).

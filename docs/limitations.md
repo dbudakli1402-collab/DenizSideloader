@@ -5,8 +5,8 @@
 - Needs: iPhone via USB, unlocked, **"Trust"** tapped, plus Apple Mobile
   Device support (install **iTunes from Apple** or the **Apple Devices** app).
 - Without that, the app reports "No iPhone connected" with causes + retry —
-  it never invents a device. Install `pip install DenizSideloader[device]`
-  (`pymobiledevice3`, open source) to enable the real backend.
+  it never invents a device. The backend (pymobiledevice3, open source) is
+  bundled with the app.
 
 ## Installation backend
 

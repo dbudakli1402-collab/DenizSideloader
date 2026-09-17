@@ -3,9 +3,9 @@
 Honest limitation handling (Windows):
 - pymobiledevice3 can query lockdown info over USB *if* Apple Mobile Device
   support / iTunes drivers are installed and the device trusts the PC.
-- IPA *installation* of a signed app via AFC/house_arrest-style flows is
-  possible only when signing requirements are met; unsigned installs are
-  refused and surfaced as errors, never bypassed.
+- IPA *installation* of a signed app via the installation proxy is possible
+  only when signing requirements are met; unsigned installs are refused and
+  surfaced as errors, never bypassed.
 - If pymobiledevice3 (or its drivers) is missing, this provider reports
   ``is_available() == False`` with a clear help text instead of faking data.
 
@@ -14,8 +14,30 @@ No private APIs, no jailbreak, no DRM handling.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Coroutine
+from typing import Any, TypeVar
+
+from app.core.logging import get_logger
 from app.device.interface import DeviceProvider
 from app.device.models import ConnectionType, DeviceInfo, TrustState
+
+log = get_logger("device.pymobile")
+
+T = TypeVar("T")
+
+
+def _run(coro: Coroutine[Any, Any, T]) -> T:
+    """Run *coro* to completion from sync code (provider interface is sync)."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    # Already inside a loop (unexpected in our threads): isolate in new thread.
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 class PyMobileDeviceProvider(DeviceProvider):
@@ -30,69 +52,95 @@ class PyMobileDeviceProvider(DeviceProvider):
 
     def list_devices(self) -> list[DeviceInfo]:
         try:
-            from pymobiledevice3.usbmux import list_devices as usbmux_list
+            from pymobiledevice3 import usbmux
         except Exception as exc:
             raise RuntimeError(f"pymobiledevice3 backend unavailable: {exc}") from exc
 
-        devices: list[DeviceInfo] = []
         try:
-            raw = usbmux_list()
-        except Exception:
+            raw = _run(usbmux.list_devices())
+        except Exception as exc:
+            log.warning("usbmux list failed: %s", exc)
             return []
+        devices: list[DeviceInfo] = []
         for entry in raw or []:
             try:
-                udid = str(getattr(entry, "udid", "") or getattr(entry, "serial", ""))
+                udid = self._entry_udid(entry)
                 if not udid:
                     continue
-                name, version = self._lockdown_info(udid)
+                name, version, trusted = self._lockdown_info(udid)
                 devices.append(
                     DeviceInfo(
                         udid=udid,
                         name=name or "iPhone",
                         ios_version=version or "Unknown",
                         connection=ConnectionType.USB,
-                        trusted=TrustState.TRUSTED if name else TrustState.UNKNOWN,
+                        trusted=trusted,
                     )
                 )
-            except Exception:
+            except Exception as exc:
+                log.warning("device entry skipped: %s", exc)
                 continue
         return devices
 
-    def _lockdown_info(self, udid: str) -> tuple[str, str]:
-        try:
+    @staticmethod
+    def _entry_udid(entry: Any) -> str:
+        if isinstance(entry, dict):
+            for key in ("UniqueDeviceID", "Identifier", "SerialNumber", "udid", "serial"):
+                value = entry.get(key)
+                if value:
+                    return str(value)
+            return ""
+        for attr in ("serial", "udid", "identifier", "ecid"):
+            value = getattr(entry, attr, None)
+            if value:
+                return str(value)
+        return ""
+
+    def _lockdown_info(self, udid: str) -> tuple[str, str, TrustState]:
+        async def _query() -> tuple[str, str, TrustState]:
             from pymobiledevice3.lockdown import create_using_usbmux
-        except Exception:
-            return "", ""
+
+            try:
+                lockdown = await create_using_usbmux(udid)
+            except Exception as exc:
+                if "trust" in str(exc).lower() or "pair" in str(exc).lower():
+                    return "", "", TrustState.UNTRUSTED
+                return "", "", TrustState.UNKNOWN
+            try:
+                name = str(await lockdown.get_value("", "DeviceName") or "")
+                version = str(await lockdown.get_value("", "ProductVersion") or "")
+            except Exception as exc:
+                if "trust" in str(exc).lower() or "pair" in str(exc).lower():
+                    return "", "", TrustState.UNTRUSTED
+                return "", "", TrustState.UNKNOWN
+            return name, version, TrustState.TRUSTED if name else TrustState.UNKNOWN
+
         try:
-            lockdown = create_using_usbmux(udid)
-            name = str(lockdown.get_value("", "DeviceName") or "")
-            version = str(lockdown.get_value("", "ProductVersion") or "")
-            return name, version
-        except Exception as exc:
-            # Pairing/trust errors surface as untrusted hint via empty name.
-            if "trust" in str(exc).lower() or "pair" in str(exc).lower():
-                return "", ""
-            return "", ""
+            return _run(_query())
+        except Exception:
+            return "", "", TrustState.UNKNOWN
 
     def list_installed_apps(self, udid: str) -> list[dict[str, str]]:
         """Best-effort installed-app query via pymobiledevice3.
 
         Returns [] when unsupported/unavailable. Never raises for UI paths.
         """
-        try:
+
+        async def _query() -> list[dict[str, str]]:
             from pymobiledevice3.lockdown import create_using_usbmux
             from pymobiledevice3.services.installation_proxy import InstallationProxyService
-        except Exception:
-            return []
-        try:
-            lockdown = create_using_usbmux(udid)
-            with InstallationProxyService(lockdown=lockdown) as inst:
-                apps = inst.get_apps()
+
+            lockdown = await create_using_usbmux(udid)
+            async with InstallationProxyService(lockdown=lockdown) as inst:
+                # Note: the 'User' filter returns {} on recent iOS versions,
+                # so query 'Any' and keep third-party apps (never com.apple.*).
+                apps = await inst.get_apps("Any")
             result: list[dict[str, str]] = []
-            app_dict = apps.get("User", apps) if isinstance(apps, dict) else {}
-            if isinstance(app_dict, dict):
-                for bundle_id, meta in app_dict.items():
+            if isinstance(apps, dict):
+                for bundle_id, meta in apps.items():
                     if not isinstance(meta, dict):
+                        continue
+                    if str(bundle_id).startswith("com.apple."):
                         continue
                     result.append(
                         {
@@ -102,12 +150,16 @@ class PyMobileDeviceProvider(DeviceProvider):
                         }
                     )
             return result
-        except Exception:
+
+        try:
+            return _run(_query())
+        except Exception as exc:
+            log.warning("installed-apps query failed: %s", exc)
             return []
 
     def help_text(self) -> str:
         return (
-            "pymobiledevice3 backend (optional, open-source, `pip install DenizSideloader[device]`).\n"
+            "pymobiledevice3 backend (open-source, bundled in the release build).\n"
             "Requires: iPhone connected via USB, unlocked, tapped \u201cTrust\u201d, "
             "plus Apple Mobile Device support (install iTunes from Apple or Apple Devices app).\n"
             "Without these, no device is reported \u2014 this is a documented limitation, not an error to bypass."

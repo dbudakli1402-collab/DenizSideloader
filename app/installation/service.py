@@ -149,37 +149,44 @@ class InstallationService:
     ) -> tuple[bool, str]:
         """Try real install via pymobiledevice3; else honest limitation message."""
         try:
-            from pymobiledevice3.lockdown import create_using_usbmux
-            from pymobiledevice3.services.installation_proxy import InstallationProxyService
+            import pymobiledevice3  # noqa: F401
         except Exception:
             return False, (
                 "The install backend (pymobiledevice3) isn't available on this PC.\n\n"
                 "To enable real installs:\n"
-                "\u2022 Install iTunes / Apple Devices + `pip install DenizSideloader[device]`\n"
+                "\u2022 Install iTunes / Apple Devices (device backend is bundled with the app)\n"
                 "\u2022 Provide your Apple Developer signing assets (Settings \u2192 Signing)\n"
                 "\u2022 Reconnect via USB, trust, retry\n\n"
                 "Nothing was installed \u2014 this is a documented limitation, not a silent fake-success."
             )
+
+        def _cb(percent: object, *args: object) -> None:
+            try:
+                pct = max(0, min(100, int(str(percent))))  # handler(percent_complete, ...)
+            except (TypeError, ValueError):
+                pct = 0
+            try:
+                job.progress = 0.75 + (pct / 100.0) * 0.16
+                job.message = f"Installing application\u2026 {pct}%"
+                if on_step:
+                    on_step(job)
+            except Exception:
+                pass
+
+        async def _install() -> None:
+            from pathlib import Path
+
+            from pymobiledevice3.lockdown import create_using_usbmux
+            from pymobiledevice3.services.installation_proxy import InstallationProxyService
+
+            lockdown = await create_using_usbmux(udid)
+            async with InstallationProxyService(lockdown=lockdown) as inst:
+                await inst.install_from_local(Path(signed_ipa), handler=_cb)
+
         try:
-            lockdown = create_using_usbmux(udid)
-            last_pct = 0
+            from app.device.pymobiledevice_provider import _run
 
-            def _cb(progress: object) -> None:
-                nonlocal last_pct
-                try:
-                    pct = 0
-                    if isinstance(progress, dict):
-                        pct = int(progress.get("PercentComplete", 0))
-                    frac = 0.75 + (min(100, max(0, pct)) / 100.0) * 0.16
-                    job.progress = frac
-                    job.message = f"Installing application\u2026 {pct}%"
-                    if on_step:
-                        on_step(job)
-                except Exception:
-                    pass
-
-            with InstallationProxyService(lockdown=lockdown) as inst:
-                inst.install(signed_ipa, callback=_cb)
+            _run(_install())
             return True, "ok"
         except Exception as exc:
             msg = str(exc)

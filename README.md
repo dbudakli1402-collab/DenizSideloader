@@ -27,7 +27,7 @@
 - Windows 10/11, Python 3.10+
 - iPhone with USB data cable
 - Apple Mobile Device support: iTunes (apple.com) or Apple Devices app
-- For real installs: `pip install DenizSideloader[device]` (pymobiledevice3) + your own signing assets
+- For real installs: the device backend (pymobiledevice3) is bundled; just add your own signing assets
 
 ## Installation
 

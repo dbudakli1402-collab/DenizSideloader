@@ -1,4 +1,5 @@
 PySide6>=6.6.0
 requests>=2.31.0
 keyring>=25.0.0
+pymobiledevice3>=4.20.0
 pywin32-ctypes>=0.2.2; sys_platform == 'win32'

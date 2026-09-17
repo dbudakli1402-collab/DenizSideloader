@@ -1,6 +1,6 @@
 [project]
 name = "deniz-sideloader"
-version = "0.1.0"
+version = "0.1.1"
 description = "A modern open-source desktop application for managing and legitimately sideloading IPA applications to your own iPhone."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,6 +20,7 @@ dependencies = [
   "PySide6>=6.6.0",
   "requests>=2.31.0",
   "keyring>=25.0.0",
+  "pymobiledevice3>=4.20.0",
   "pywin32-ctypes>=0.2.2; sys_platform == 'win32'",
 ]
 
@@ -31,9 +32,6 @@ dev = [
   "ruff>=0.4.0",
   "mypy>=1.10.0",
   "pyinstaller>=6.0.0",
-]
-device = [
-  "pymobiledevice3>=4.20.0",
 ]
 
 [project.scripts]
