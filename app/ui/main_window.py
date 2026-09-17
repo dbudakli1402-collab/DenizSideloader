@@ -111,6 +111,7 @@ class MainWindow(QMainWindow):
         self.history = HistoryStore(config.app_data_dir / "history.jsonl")
         self._worker: InstallWorker | None = None
         self._dialog: InstallDialog | None = None
+        self._fade_anim: QPropertyAnimation | None = None
         self._known_devices: set[str] = set()
         self._dl_states: dict[int, DownloadState] = {}
         self._details_cache: dict[str, dict] = {}
@@ -377,6 +378,15 @@ class MainWindow(QMainWindow):
 
     def _fade_to(self, row: int) -> None:
         self.stack.setCurrentIndex(row)
+        # Stop any running transition first (effect must never get stuck:
+        # a leftover opacity effect corrupts all repainting of the page).
+        if self._fade_anim is not None:
+            try:
+                self._fade_anim.stop()
+            except Exception:
+                pass
+            self._fade_anim = None
+        self.stack.setGraphicsEffect(None)  # type: ignore[arg-type]  # Qt: None removes the effect
         eff = QGraphicsOpacityEffect(self.stack)
         self.stack.setGraphicsEffect(eff)
         anim = QPropertyAnimation(eff, b"opacity", self)
@@ -384,8 +394,13 @@ class MainWindow(QMainWindow):
         anim.setStartValue(0.35)
         anim.setEndValue(1.0)
         anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.finished.connect(self._clear_fade)
+        self._fade_anim = anim  # keep alive: GC would freeze the effect mid-fade
         anim.start()
-        anim.finished.connect(lambda: self.stack.setGraphicsEffect(None))  # type: ignore[arg-type]
+
+    def _clear_fade(self) -> None:
+        self.stack.setGraphicsEffect(None)  # type: ignore[arg-type]  # Qt: None removes the effect
+        self._fade_anim = None
 
     def _toggle_sidebar(self) -> None:
         narrow = self.sidebar.width() > 120

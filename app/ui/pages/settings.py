@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -33,11 +34,21 @@ class SettingsPage(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         root = QVBoxLayout(self)
-        root.setContentsMargins(26, 22, 26, 22)
-        root.setSpacing(14)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        content = QWidget()
+        body = QVBoxLayout(content)
+        body.setContentsMargins(26, 22, 26, 22)
+        body.setSpacing(14)
+        root.addWidget(scroll)
+        scroll.setWidget(content)
         head = QLabel("Einstellungen")
         head.setObjectName("pageTitle")
-        root.addWidget(head)
+        body.addWidget(head)
 
         # GENERAL
         c, lay = D.card()
@@ -56,7 +67,7 @@ class SettingsPage(QWidget):
         f.addRow("Theme", self.combo_theme)
         f.addRow("Sprache", self.combo_lang)
         lay.addLayout(f)
-        root.addWidget(c)
+        body.addWidget(c)
 
         # DEVICE
         c, lay = D.card()
@@ -69,7 +80,7 @@ class SettingsPage(QWidget):
         f.addRow(self.cb_confirm)
         f.addRow(self.cb_checkconn)
         lay.addLayout(f)
-        root.addWidget(c)
+        body.addWidget(c)
 
         # INSTALLATION
         c, lay = D.card()
@@ -117,7 +128,7 @@ class SettingsPage(QWidget):
         expl.setWordWrap(True)
         expl.setObjectName("muted")
         lay.addWidget(expl)
-        root.addWidget(c)
+        body.addWidget(c)
 
         # NOTIFICATIONS
         c, lay = D.card()
@@ -127,7 +138,7 @@ class SettingsPage(QWidget):
         self.cb_n_download = QCheckBox("Downloads")
         for cb in (self.cb_n_success, self.cb_n_error, self.cb_n_download):
             lay.addWidget(cb)
-        root.addWidget(c)
+        body.addWidget(c)
 
         # ADVANCED
         c, lay = D.card()
@@ -152,7 +163,7 @@ class SettingsPage(QWidget):
         note = QLabel("Zugangsdaten: OS-Schlüsselbund. Keine Telemetrie.")
         note.setObjectName("muted")
         lay.addWidget(note)
-        root.addWidget(c)
+        body.addWidget(c)
 
         # ABOUT
         c, lay = D.card()
@@ -164,13 +175,13 @@ class SettingsPage(QWidget):
         b_gh.setObjectName("ghost")
         b_gh.clicked.connect(self.open_github.emit)
         lay.addWidget(b_gh, alignment=Qt.AlignmentFlag.AlignLeft)
-        root.addWidget(c)
+        body.addWidget(c)
 
         self.btn_save = QPushButton("Speichern")
         self.btn_save.setObjectName("primary")
         self.btn_save.clicked.connect(self.save_requested.emit)
-        root.addWidget(self.btn_save, alignment=Qt.AlignmentFlag.AlignLeft)
-        root.addStretch(1)
+        body.addWidget(self.btn_save, alignment=Qt.AlignmentFlag.AlignLeft)
+        body.addStretch(1)
 
     def load(self, s: AppSettings) -> None:
         self.cb_autostart.setChecked(s.general.start_with_windows)
