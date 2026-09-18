@@ -1,4 +1,4 @@
-"""App shell v2: frameless window, sidebar, topbar, toasts, history wiring."""
+"""App shell v3 (Mockup): 6 Bereiche, Profil, Statusbar, Quick-Actions."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPropertyAnimation, Qt
 from PySide6.QtGui import QAction, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog,
-    QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
@@ -30,28 +29,31 @@ from app import __app_name__, __version__
 from app.core.config import AppConfig
 from app.core.logging import get_logger
 from app.device.interface import DeviceService
+from app.device.models import DeviceInfo
+from app.device.pairing import list_pair_records
 from app.downloads.manager import DownloadItem, DownloadManager, DownloadState
 from app.installation.models import InstallationJob
 from app.installation.service import InstallationService
-from app.ipa.library import CATEGORIES, IpaLibrary
+from app.ipa.library import IpaLibrary
 from app.ipa.models import IpaInfo
 from app.security import credentials as creds
+from app.signing.base import SigningProvider
+from app.signing.models import SigningIdentity
 from app.storage.autostart import set_start_with_windows
 from app.storage.history import HistoryStore
 from app.storage.settings import SettingsStore
 from app.ui import design as D
 from app.ui.dialogs.app_details import AppDetailsDialog
 from app.ui.dialogs.install_dialog import InstallDialog
+from app.ui.dialogs.quick_actions import BundleIdDialog, ProfilesDialog, QrDialog, SignDialog, UrlDownloadDialog
 from app.ui.dialogs.search_dialog import SearchDialog
 from app.ui.dialogs.wizard import FirstLaunchWizard
 from app.ui.icons import icon as make_icon
 from app.ui.pages.apps import AppsPage
-from app.ui.pages.catalog import CatalogPage
 from app.ui.pages.devices import DevicesPage
-from app.ui.pages.downloads import DownloadsPage
-from app.ui.pages.files import FilesPage
-from app.ui.pages.history import HistoryPage
 from app.ui.pages.home import HomePage
+from app.ui.pages.library import LibraryPage
+from app.ui.pages.logs import LogsPage
 from app.ui.pages.settings import SettingsPage
 from app.ui.widgets.toasts import ToastManager
 
@@ -60,23 +62,11 @@ log = get_logger("ui")
 NAV = [
     ("Home", "home"),
     ("Apps", "apps"),
-    ("IPA-Dateien", "file"),
     ("Geräte", "phone"),
-    ("App-Bibliothek", "book"),
-    ("Downloads", "download"),
-    ("Verlauf", "history"),
+    ("Bibliothek", "book"),
+    ("Logs", "history"),
     ("Einstellungen", "gear"),
 ]
-
-CAT_ICONS = {
-    "Alle": "apps",
-    "Spiele": "play",
-    "Social": "bell",
-    "Tools": "gear",
-    "Entertainment": "play",
-    "Produktivität": "bolt",
-    "Bildung": "book",
-}
 
 
 class InstallWorker(QThread):
@@ -131,36 +121,24 @@ class MainWindow(QMainWindow):
         root.setSpacing(0)
 
         self._build_sidebar(root)
-
         main_col = QVBoxLayout()
         main_col.setContentsMargins(0, 0, 0, 0)
         main_col.setSpacing(0)
         self._build_topbar(main_col)
         self.stack = QStackedWidget()
         main_col.addWidget(self.stack, 1)
-        self.statusBar().showMessage("Bereit")
+        self._build_statusbar(main_col)
         wrap = QWidget()
         wrap.setLayout(main_col)
         root.addWidget(wrap, 1)
 
         self.home = HomePage()
         self.apps = AppsPage()
-        self.files = FilesPage()
         self.devices_page = DevicesPage()
-        self.catalog = CatalogPage()
-        self.dl_page = DownloadsPage()
-        self.history_page = HistoryPage()
+        self.library_page = LibraryPage()
+        self.logs_page = LogsPage(config.log_dir / "deniz-sideloader.log")
         self.settings_page = SettingsPage()
-        self._pages = [
-            self.home,
-            self.apps,
-            self.files,
-            self.devices_page,
-            self.catalog,
-            self.dl_page,
-            self.history_page,
-            self.settings_page,
-        ]
+        self._pages = [self.home, self.apps, self.devices_page, self.library_page, self.logs_page, self.settings_page]
         for p in self._pages:
             self.stack.addWidget(p)
 
@@ -168,21 +146,21 @@ class MainWindow(QMainWindow):
         self._wire()
         self._shortcuts()
         self._tray()
-        self.refresh_all(reason="start")
+        self.refresh_all()
 
-    # -- shell construction ------------------------------------------------
+    # -- shell -------------------------------------------------------------
     def _build_sidebar(self, root: QHBoxLayout) -> None:
         side = QWidget()
         side.setObjectName("sidebar")
-        side.setFixedWidth(232)
+        side.setFixedWidth(248)
         self.sidebar = side
         lay = QVBoxLayout(side)
         lay.setContentsMargins(14, 16, 14, 14)
         lay.setSpacing(8)
 
-        brand_row = QHBoxLayout()
-        bolt = QLabel()
-        bolt.setPixmap(make_icon("bolt", 24, D.CYAN).pixmap(30, 30))
+        brand = QHBoxLayout()
+        brand.setSpacing(10)
+        brand.addWidget(D.logo_badge(40))
         bcol = QVBoxLayout()
         bcol.setSpacing(0)
         b = QLabel("Deniz Sideloader")
@@ -191,15 +169,14 @@ class MainWindow(QMainWindow):
         v.setObjectName("brandSub")
         bcol.addWidget(b)
         bcol.addWidget(v)
-        brand_row.addWidget(bolt)
-        brand_row.addLayout(bcol, 1)
+        brand.addLayout(bcol, 1)
         self.btn_collapse = QPushButton()
         self.btn_collapse.setObjectName("iconbtn")
         self.btn_collapse.setIcon(make_icon("sidebar", 18))
         self.btn_collapse.setToolTip("Sidebar ein-/ausklappen")
         self.btn_collapse.clicked.connect(self._toggle_sidebar)
-        brand_row.addWidget(self.btn_collapse)
-        lay.addLayout(brand_row)
+        brand.addWidget(self.btn_collapse)
+        lay.addLayout(brand)
 
         self.nav = QListWidget()
         self.nav.setObjectName("nav")
@@ -209,41 +186,24 @@ class MainWindow(QMainWindow):
             self.nav.addItem(item)
         self.nav.setCurrentRow(0)
         self.nav.currentRowChanged.connect(self._switch)
-        self.nav.setMouseTracking(True)
-        lay.addWidget(self.nav)
+        lay.addWidget(self.nav, 1)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color: {D.BORDER_SOFT};")
-        lay.addWidget(sep)
-        cat_h = QLabel("KATEGORIEN")
-        cat_h.setObjectName("section")
-        lay.addWidget(cat_h)
-        self.cats = QListWidget()
-        self.cats.setObjectName("nav")
-        self.cat_items: list[QListWidgetItem] = []
-        for c in CATEGORIES:
-            item = QListWidgetItem(make_icon(CAT_ICONS.get(c, "apps"), 17), c)
-            self.cats.addItem(item)
-            self.cat_items.append(item)
-        self.cats.setCurrentRow(0)
-        self.cats.itemClicked.connect(self._pick_category)
-        self.cats.setMaximumHeight(240)
-        lay.addWidget(self.cats)
-        lay.addStretch(1)
-
-        # device mini card
-        self.mini, mini_lay = D.card(obj="card2")
-        mini_lay.setContentsMargins(12, 10, 12, 10)
-        self.mini_name = QLabel("Kein iPhone")
-        self.mini_name.setStyleSheet("font-size: 13px; font-weight: 700;")
-        self.mini_sub = QLabel("Nicht verbunden")
-        self.mini_sub.setObjectName("muted")
-        mini_lay.addWidget(self.mini_name)
-        mini_lay.addWidget(self.mini_sub)
-        self.mini.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.mini.installEventFilter(self)
-        lay.addWidget(self.mini)
+        self.profile, play = D.card(obj="card2")
+        play.setContentsMargins(12, 10, 12, 10)
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        row.addWidget(D.logo_badge(36))
+        tx = QVBoxLayout()
+        tx.setSpacing(0)
+        self.prof_name = QLabel("Deniz")
+        self.prof_name.setStyleSheet("font-size: 13px; font-weight: 700;")
+        self.prof_type = QLabel("Kostenlos")
+        self.prof_type.setObjectName("muted")
+        tx.addWidget(self.prof_name)
+        tx.addWidget(self.prof_type)
+        row.addLayout(tx, 1)
+        play.addLayout(row)
+        lay.addWidget(self.profile)
         root.addWidget(side)
 
     def _build_topbar(self, col: QVBoxLayout) -> None:
@@ -253,9 +213,8 @@ class MainWindow(QMainWindow):
         lay = QHBoxLayout(bar)
         lay.setContentsMargins(20, 10, 16, 10)
         lay.setSpacing(10)
-        self.crumb = QLabel("Home")
-        self.crumb.setObjectName("cardTitle")
-        lay.addWidget(self.crumb)
+        ver = D.chip(f"Version {__version__}", "blue")
+        lay.addWidget(ver)
         lay.addStretch(1)
         self.search_btn = QPushButton("  Apps, IPA-Dateien oder Geräte suchen …      Strg + K")
         self.search_btn.setObjectName("ghost")
@@ -275,7 +234,7 @@ class MainWindow(QMainWindow):
         b_set.setObjectName("iconbtn")
         b_set.setIcon(make_icon("gear", 18))
         b_set.setToolTip("Einstellungen")
-        b_set.clicked.connect(lambda: self._switch(7))
+        b_set.clicked.connect(lambda: self._switch(5))
         lay.addWidget(b_set)
         for glyph, tip, slot in (
             ("min", "Minimieren", self.showMinimized),
@@ -291,37 +250,64 @@ class MainWindow(QMainWindow):
         col.addWidget(bar)
         self.topbar = bar
         self._refresh_theme_icon()
-        grip = QSizeGrip(self)
-        grip.setFixedSize(16, 16)
+        QSizeGrip(self).setFixedSize(16, 16)
 
-    # -- wiring ------------------------------------------------------------
+    def _build_statusbar(self, col: QVBoxLayout) -> None:
+        bar = self.statusBar()
+        self.st_dot = QLabel("●")
+        self.st_dot.setStyleSheet(f"color: {D.GREEN}; font-size: 11px;")
+        self.st_text = QLabel("Bereit für Sideloading")
+        self.st_text.setObjectName("statusOk")
+        bar.addWidget(self.st_dot)
+        bar.addWidget(self.st_text, 1)
+        self.st_ios = QLabel("")
+        self.st_ios.setObjectName("muted")
+        self.st_conn = QLabel("")
+        self.st_conn.setObjectName("muted")
+        bar.addPermanentWidget(self.st_ios)
+        bar.addPermanentWidget(self.st_conn)
+
+    # -- wiring --------------------------------------------------------------
     def _wire(self) -> None:
         self.home.choose_ipa.connect(self.choose_and_install)
         self.home.files_dropped.connect(self._import_many)
         self.home.goto.connect(self._switch)
+        self.home.quick_library.connect(self._goto_library_files)
+        self.home.quick_url.connect(self._ask_url)
+        self.home.quick_qr.connect(lambda: QrDialog(parent=self).exec())
+        self.home.action_sign.connect(self._quick_sign)
+        self.home.action_bundle.connect(self._quick_bundle)
+        self.home.action_profiles.connect(self._show_profiles)
+        self.home.action_logs.connect(lambda: self._switch(4))
+        self.home.install_ipa.connect(lambda info: self._install_path(info.path))
+        self.home.open_details.connect(self._show_details)
+        self.home.uninstall_app.connect(self._uninstall_app)
         self.apps.install_ipa.connect(lambda info: self._install_path(info.path))
         self.apps.import_requested.connect(self.import_ipa)
         self.apps.open_details.connect(self._show_details)
-        self.files.install_ipa.connect(lambda info: self._install_path(info.path))
-        self.files.import_requested.connect(self.import_ipa)
-        self.files.files_dropped.connect(self._import_many)
-        self.files.open_details.connect(self._show_details)
-        self.files.set_category.connect(self._set_category)
-        self.files.rename_requested.connect(self._rename_ipa)
-        self.files.reveal_requested.connect(self._reveal_ipa)
-        self.files.remove_requested.connect(self._remove_ipa)
-        self.catalog.install_ipa.connect(lambda info: self._install_path(info.path))
-        self.catalog.open_details.connect(self._show_details)
-        self.catalog.category_selected.connect(self._pick_category_name)
+        self.apps.uninstall_app.connect(self._uninstall_app)
+        self.library_page.install_ipa.connect(lambda info: self._install_path(info.path))
+        self.library_page.import_requested.connect(self.import_ipa)
+        self.library_page.files_dropped.connect(self._import_many)
+        self.library_page.open_details.connect(self._show_details)
+        self.library_page.set_category.connect(self._set_category)
+        self.library_page.rename_requested.connect(self._rename_ipa)
+        self.library_page.reveal_requested.connect(self._reveal_ipa)
+        self.library_page.remove_requested.connect(self._remove_ipa)
+        self.library_page.start_download.connect(self._start_download)
+        self.library_page.cancel_download.connect(self._cancel_download)
+        self.library_page.pause_download.connect(self._pause_download)
         self.devices_page.refresh_requested.connect(lambda: self.refresh_devices(True))
         self.devices_page.show_apps.connect(lambda: self._switch(1))
-        self.dl_page.start_download.connect(self._start_download)
-        self.dl_page.cancel_download.connect(self._cancel_download)
-        self.dl_page.pause_download.connect(self._pause_download)
+        self.logs_page.clear_logs.connect(self._clear_logs)
+        self.logs_page.open_folder.connect(
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.config.log_dir)))
+        )
         self.settings_page.save_requested.connect(self._save_settings)
         self.settings_page.clear_credentials.connect(self._clear_creds)
         self.settings_page.clear_logs.connect(self._clear_logs)
         self.settings_page.clear_cache.connect(self._clear_cache)
+        self.settings_page.show_pairing.connect(self.show_pairing)
         self.settings_page.browse_downloads.connect(self._browse_downloads)
         self.settings_page.browse_provisioning.connect(self._browse_prov)
         self.settings_page.open_github.connect(
@@ -332,7 +318,7 @@ class MainWindow(QMainWindow):
         sc = QShortcut(QKeySequence("Ctrl+K"), self)
         sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
         sc.activated.connect(self._open_search)
-        for i in range(8):
+        for i in range(6):
             s = QShortcut(QKeySequence(f"Ctrl+{i + 1}"), self)
             s.setContext(Qt.ShortcutContext.ApplicationShortcut)
             s.activated.connect(lambda _=False, n=i: self._switch(n))
@@ -351,84 +337,59 @@ class MainWindow(QMainWindow):
         self.tray.setContextMenu(menu)
         self.tray.show()
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if watched is self.mini and event.type() == QEvent.Type.MouseButtonPress:
-            self._switch(3)
-            return True
-        return super().eventFilter(watched, event)
-
-    # -- navigation --------------------------------------------------------
+    # -- navigation ------------------------------------------------------------
     def _switch(self, row: int) -> None:
         self.nav.blockSignals(True)
         self.nav.setCurrentRow(row)
         self.nav.blockSignals(False)
-        self.crumb.setText(NAV[row][0])
         if self.settings.settings.general.animations:
             self._fade_to(row)
         else:
             self.stack.setCurrentIndex(row)
-        if row in (0, 3):
+        if row in (0, 2):
             self.refresh_devices()
-        if row == 1:
+        if row in (0, 1):
             self.refresh_apps()
-        if row == 6:
-            self.history_page.set_events(self.history.list(self._history_filter))
+        if row == 3:
+            self.refresh_library()
+            self.refresh_downloads()
         if row == 4:
-            self.catalog.set_items(self.library.list())
+            self.logs_page.reload()
+            self.logs_page.set_events(self.history.list("all"))
 
     def _fade_to(self, row: int) -> None:
         self.stack.setCurrentIndex(row)
-        # Stop any running transition first (effect must never get stuck:
-        # a leftover opacity effect corrupts all repainting of the page).
         if self._fade_anim is not None:
             try:
                 self._fade_anim.stop()
             except Exception:
                 pass
             self._fade_anim = None
-        self.stack.setGraphicsEffect(None)  # type: ignore[arg-type]  # Qt: None removes the effect
+        self.stack.setGraphicsEffect(None)  # type: ignore[arg-type]
         eff = QGraphicsOpacityEffect(self.stack)
         self.stack.setGraphicsEffect(eff)
         anim = QPropertyAnimation(eff, b"opacity", self)
-        anim.setDuration(160)
-        anim.setStartValue(0.35)
+        anim.setDuration(180)
+        anim.setStartValue(0.4)
         anim.setEndValue(1.0)
         anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         anim.finished.connect(self._clear_fade)
-        self._fade_anim = anim  # keep alive: GC would freeze the effect mid-fade
+        self._fade_anim = anim
         anim.start()
 
     def _clear_fade(self) -> None:
-        self.stack.setGraphicsEffect(None)  # type: ignore[arg-type]  # Qt: None removes the effect
+        self.stack.setGraphicsEffect(None)  # type: ignore[arg-type]
         self._fade_anim = None
 
     def _toggle_sidebar(self) -> None:
-        narrow = self.sidebar.width() > 120
-        self._anim_width(self.sidebar, 64 if narrow else 232)
-
-    def _anim_width(self, widget: QWidget, target: int) -> None:
-        anim = QPropertyAnimation(widget, b"minimumWidth", self)
-        anim.setDuration(200)
-        anim.setStartValue(widget.width())
-        anim.setEndValue(target)
-        anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
-        anim.start()
-        anim2 = QPropertyAnimation(widget, b"maximumWidth", self)
-        anim2.setDuration(200)
-        anim2.setStartValue(widget.width())
-        anim2.setEndValue(target)
-        anim2.start()
-
-    def _pick_category(self, item: QListWidgetItem) -> None:
-        self._pick_category_name(item.text())
-
-    def _pick_category_name(self, name: str) -> None:
-        for i, it in enumerate(self.cat_items):
-            if it.text() == name:
-                self.cats.setCurrentRow(i)
-                break
-        self.catalog.set_category(name)
-        self._switch(4)
+        narrow = self.sidebar.width() > 130
+        for prop, target in (("minimumWidth", 64 if narrow else 248), ("maximumWidth", 64 if narrow else 248)):
+            anim = QPropertyAnimation(self.sidebar, prop.encode(), self)
+            anim.setDuration(200)
+            anim.setStartValue(self.sidebar.width())
+            anim.setEndValue(target)
+            anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+            anim.start()
 
     def _toggle_max(self) -> None:
         if self.isMaximized():
@@ -451,7 +412,6 @@ class MainWindow(QMainWindow):
         dark = self.settings.settings.general.theme != "light"
         self.btn_theme.setIcon(make_icon("moon" if dark else "sun", 18))
 
-    # frameless dragging
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton and self.topbar.underMouse():
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
@@ -477,25 +437,32 @@ class MainWindow(QMainWindow):
         if event.type() == QEvent.Type.WindowStateChange and hasattr(self, "toasts"):
             self.toasts.resize_to_parent()
 
-    # -- search ------------------------------------------------------------
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        return super().eventFilter(watched, event)
+
+    def _goto_library_files(self) -> None:
+        self._switch(3)
+        self.library_page.tabs.setCurrentIndex(0)
+
+    # -- search ------------------------------------------------------------------
     def _open_search(self) -> None:
         dlg = SearchDialog(self)
         dlg.set_data(self.library.list(), self.devices.cached, self._installed_cache)
         dlg.picked_ipa.connect(lambda info: self._show_details({"ipa": info}))
         dlg.picked_app.connect(self._show_details)
-        dlg.picked_device.connect(lambda _d: self._switch(3))
+        dlg.picked_device.connect(lambda _d: self._switch(2))
         dlg.exec()
 
-    # -- data refresh ------------------------------------------------------
-    def refresh_all(self, reason: str = "") -> None:
+    # -- refresh -------------------------------------------------------------------
+    def refresh_all(self) -> None:
         self.refresh_devices()
         self.refresh_library()
         self.refresh_downloads()
         self.refresh_apps()
         self.settings_page.load(self.settings.settings)
-        self.history_page.set_events(self.history.list("all"))
-        self.home.set_activity(self.history.list("all"))
-        _ = reason
+        self.logs_page.set_events(self.history.list("all"))
+        self.home.set_apps(self._installed_cache, self.library.list())
+        self._update_profile()
 
     def refresh_devices(self, manual: bool = False) -> None:
         found = self.devices.refresh()
@@ -514,21 +481,14 @@ class MainWindow(QMainWindow):
         if dev is not None:
             details = self._device_details(dev.udid)
         self.home.set_device(dev, details.get(dev.udid, {}) if dev else {})
-        self.home.set_status_chip(dev is not None)
-        self.home.set_activity(self.history.list("all"))
+        self.home.set_apps(self._installed_cache, self.library.list())
         self.devices_page.set_devices(found, details, self.devices.backend_help() if not found else "")
-        if dev is not None:
-            self.mini_name.setText(dev.display_name)
-            self.mini_sub.setText(f"iOS {dev.ios_version} · Verbunden")
-        else:
-            self.mini_name.setText("Kein iPhone")
-            self.mini_sub.setText("Nicht verbunden")
         self._set_conn(dev is not None)
+        self._update_statusbar(dev)
         self._update_badges()
         if manual:
-            self.statusBar().showMessage(f"{len(found)} Gerät(e) verbunden" if found else "Kein iPhone verbunden")
-            if self.stack.currentIndex() == 6:
-                self.history_page.set_events(self.history.list(self._history_filter))
+            self.statusBar().showMessage("Bereit")
+            self.toasts.info("Geräte aktualisiert", f"{len(found)} Gerät(e) gefunden.")
 
     def _device_details(self, udid: str) -> dict:
         if udid in self._details_cache:
@@ -546,23 +506,34 @@ class MainWindow(QMainWindow):
         return {}
 
     def _set_conn(self, connected: bool) -> None:
-        parent = self.conn.parent()
-        lay = parent.layout() if parent is not None else None
-        if lay is not None:
-            old = self.conn
-            idx = lay.indexOf(old)
-            lay.removeWidget(old)
-            old.deleteLater()
-            self.conn = D.chip("Verbunden" if connected else "Getrennt", "green" if connected else "gray")
-            lay.insertWidget(idx if idx >= 0 else lay.count(), self.conn)
+        self.conn.setText("Verbunden" if connected else "Getrennt")
+        if connected:
+            self.conn.setStyleSheet(f"QLabel#chip {{ background: {D.GREEN_BG}; color: {D.GREEN}; }}")
+        else:
+            self.conn.setStyleSheet("QLabel#chip { background: #16203a; color: #8b94a9; }")
+
+    def _update_statusbar(self, dev: DeviceInfo | None) -> None:
+        if dev is None:
+            self.st_dot.setStyleSheet(f"color: {D.FAINT}; font-size: 11px;")
+            self.st_text.setText("Nicht verbunden")
+            self.st_text.setObjectName("muted")
+            self.st_ios.setText("")
+            self.st_conn.setText("")
+            return
+        self.st_dot.setStyleSheet(f"color: {D.GREEN}; font-size: 11px;")
+        self.st_text.setText("Bereit für Sideloading")
+        self.st_text.setObjectName("statusOk")
+        self.st_ios.setText(f"iOS {dev.ios_version}")
+        self.st_conn.setText(f"{dev.connection.value.upper()} · Verbunden")
+
+    def _update_profile(self) -> None:
+        s = self.settings.settings
+        self.prof_name.setText(s.signing.apple_id_username or "Deniz")
+        self.prof_type.setText("Bezahlt" if s.signing.account_type == "paid" else "Kostenlos")
 
     def refresh_library(self) -> None:
         items = self.library.list()
-        self.files.set_items(items)
-        self.catalog.set_items(items)
-        counts = self.library.counts_by_category()
-        for i, c in enumerate(CATEGORIES):
-            self.cat_items[i].setText(f"{c}  ·  {counts.get(c, 0)}")
+        self.library_page.set_items(items)
         self._update_badges()
 
     def refresh_apps(self) -> None:
@@ -580,6 +551,7 @@ class MainWindow(QMainWindow):
                         continue
         self._installed_cache = apps
         self.apps.set_data(apps, self.library.list())
+        self.home.set_apps(apps, self.library.list())
         self._update_badges()
 
     def refresh_downloads(self) -> None:
@@ -606,23 +578,15 @@ class MainWindow(QMainWindow):
                     )
                     if self.settings.settings.notify.on_error:
                         self.toasts.error("Download fehlgeschlagen", it.dest.name)
-                elif it.state == DownloadState.CANCELLED and prev not in (None,):
+                elif it.state == DownloadState.CANCELLED and prev is not None:
                     self.history.record("download", f"Download abgebrochen: {it.dest.name}", status="info")
             self._dl_states[id(it)] = it.state
-        self.dl_page.set_items(items)
+        self.library_page.set_downloads(items)
         self._update_badges()
 
     def _update_badges(self) -> None:
         lib_n = len(self.library.list())
-        dev_n = len(self.devices.cached)
-        active_dl = sum(1 for i in self.downloads.items if i.state in (DownloadState.ACTIVE, DownloadState.QUEUED))
-        counts = {
-            "Apps": len(self._installed_cache),
-            "IPA-Dateien": lib_n,
-            "Geräte": dev_n,
-            "Downloads": active_dl,
-            "App-Bibliothek": lib_n,
-        }
+        counts = {"Apps": len(self._installed_cache), "Bibliothek": lib_n, "Geräte": len(self.devices.cached)}
         for i in range(self.nav.count()):
             item = self.nav.item(i)
             name = NAV[i][0]
@@ -631,20 +595,14 @@ class MainWindow(QMainWindow):
             item.setText(f"{name}   ·   {n}" if n else name)
             item.setIcon(make_icon(glyph, 18))
 
-    @property
-    def _history_filter(self) -> str:
-        from app.ui.pages.history import KIND_MAP
-
-        return KIND_MAP.get(self.history_page.filter.currentText(), "all")
-
-    # -- IPA flows ---------------------------------------------------------
+    # -- IPA flows ---------------------------------------------------------------------
     def choose_and_install(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "IPA-Datei auswählen", "", "iOS-App (*.ipa)")
         if path:
             self._install_path(path)
 
     def import_ipa(self) -> None:
-        path = self.files.pick_file()
+        path = self.library_page.pick_file()
         if path:
             self._import_many([path])
 
@@ -659,10 +617,10 @@ class MainWindow(QMainWindow):
                 fail += 1
                 log.warning("import failed %s: %s", p, exc)
         self.refresh_library()
-        self.toasts.success(f"{ok} IPA(s) importiert") if ok else None
+        if ok:
+            self.toasts.success(f"{ok} IPA(s) importiert")
         if fail:
             self.toasts.error("Import fehlgeschlagen", f"{fail} Datei(en) ungültig.")
-        self.statusBar().showMessage(f"{ok} importiert" + (f", {fail} fehlerhaft" if fail else ""))
 
     def _set_category(self, info: object, cat: str) -> None:
         assert isinstance(info, IpaInfo)
@@ -670,7 +628,7 @@ class MainWindow(QMainWindow):
         self.refresh_library()
 
     def _rename_ipa(self, info: IpaInfo) -> None:
-        name = self.files.ask_name(info.file_name)
+        name = self.library_page.ask_name(info.file_name)
         if not name or name == info.file_name:
             return
         try:
@@ -699,6 +657,35 @@ class MainWindow(QMainWindow):
         dlg.category_changed.connect(lambda p, c: self._set_category(p, c))
         dlg.exec()
 
+    def _uninstall_app(self, payload: dict) -> None:
+        bundle = str(payload.get("bundle_id", ""))
+        name = str(payload.get("name", bundle))
+        found = self.devices.cached or self.devices.refresh()
+        if not found:
+            self.toasts.error("Kein iPhone gefunden", "Verbinde dein iPhone per USB.")
+            return
+        if (
+            QMessageBox.question(self, "Deinstallieren?", f"{name} vom iPhone entfernen?")
+            != QMessageBox.StandardButton.Yes
+        ):
+            return
+        ok, msg = False, "Backend fehlt"
+        for prov in self.devices.providers:
+            fn = getattr(prov, "uninstall_app", None)
+            if callable(fn):
+                try:
+                    ok, msg = fn(found[0].udid, bundle)
+                    break
+                except Exception as exc:
+                    ok, msg = False, str(exc)[:300]
+        if ok:
+            self.history.record("install", f"Deinstalliert: {name}", bundle)
+            self.toasts.success("Deinstalliert", name)
+            self.refresh_apps()
+        else:
+            self.history.record("install", f"Deinstallieren fehlgeschlagen: {name}", msg[:200], status="fail")
+            self.toasts.error("Deinstallieren fehlgeschlagen", msg[:200])
+
     def _install_path(self, path: str) -> None:
         s = self.settings.settings
         try:
@@ -715,7 +702,7 @@ class MainWindow(QMainWindow):
         found = self.devices.cached or self.devices.refresh()
         if not found:
             self.toasts.error("Kein iPhone gefunden", "Verbinde dein iPhone per USB und entsperre es.")
-            self._switch(3)
+            self._switch(2)
             return
         target = found[0]
         if s.iphone.confirm_before_install:
@@ -738,7 +725,6 @@ class MainWindow(QMainWindow):
     def _install_finished(self, job: InstallationJob) -> None:
         if self._dialog:
             self._dialog.update_job(job)
-        # signed work copy always cleaned
         try:
             Path(job.ipa_path).with_name(Path(job.ipa_path).stem + ".signed.ipa").unlink(missing_ok=True)
         except Exception:
@@ -774,9 +760,6 @@ class MainWindow(QMainWindow):
                 job.error_detail,
                 "\n".join(job.log[-8:]),
             )
-        self.home.set_activity(self.history.list("all"))
-        if self.stack.currentIndex() == 6:
-            self.history_page.set_events(self.history.list(self._history_filter))
 
     def _friendly_error(self, title: str, message: str, technical: str = "") -> None:
         box = QMessageBox(self)
@@ -789,19 +772,109 @@ class MainWindow(QMainWindow):
         box.addButton("Schließen", QMessageBox.ButtonRole.RejectRole)
         box.exec()
 
-    # -- downloads ---------------------------------------------------------
+    # -- quick actions --------------------------------------------------------------------
+    def _ask_url(self) -> None:
+        dlg = UrlDownloadDialog(self)
+        dlg.start.connect(self._start_download)
+        dlg.exec()
+
+    def _quick_sign(self) -> None:
+        items = self.library.list()
+        if not items:
+            self.toasts.error("Keine IPA-Datei", "Importiere zuerst eine IPA in die Bibliothek.")
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "IPA zum Signieren wählen", "", "iOS-App (*.ipa)")
+        target = next((i for i in items if i.path == path), items[0] if not path else None)
+        if target is None:
+            return
+        idents = self.installer.signing.all_identities()
+        dlg = SignDialog(target, idents, self)
+        dlg.sign_now.connect(lambda prov, ident: self._do_standalone_sign(target, prov, ident))
+        dlg.exec()
+
+    def _do_standalone_sign(self, ipa: IpaInfo, provider: SigningProvider, identity: SigningIdentity) -> None:
+        out = str(Path(ipa.path).with_name(Path(ipa.path).stem + "-signed.ipa"))
+        res = self.installer.signing.sign(provider, ipa.path, identity, out)
+        if res.ok and res.output_ipa:
+            try:
+                info = self.library.import_file(res.output_ipa)
+                self.refresh_library()
+                self.history.record("install", f"Signiert: {info.display_title}", identity.label)
+                self.toasts.success("Signiert", info.display_title)
+            except Exception as exc:
+                self.toasts.error("Import fehlgeschlagen", str(exc)[:200])
+        else:
+            self.history.record(
+                "install",
+                f"Signieren fehlgeschlagen: {ipa.display_title}",
+                res.message[:200],
+                status="fail",
+            )
+            self.toasts.error("Signieren fehlgeschlagen", res.message[:300])
+
+    def _quick_bundle(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "IPA wählen", "", "iOS-App (*.ipa)")
+        if not path:
+            items = self.library.list()
+            if not items:
+                self.toasts.error("Keine IPA-Datei", "Importiere zuerst eine IPA in die Bibliothek.")
+                return
+            info = items[0]
+        else:
+            try:
+                info = self.library.import_file(path)
+                self.refresh_library()
+            except Exception as exc:
+                self.toasts.error("Import fehlgeschlagen", str(exc)[:200])
+                return
+        dlg = BundleIdDialog(info.bundle_id, self)
+        dlg.apply_now.connect(lambda bid: self._do_repackage(info, bid))
+        dlg.exec()
+
+    def _do_repackage(self, info: IpaInfo, bundle_id: str) -> None:
+        from app.ipa.repackage import set_bundle_id
+
+        try:
+            out = set_bundle_id(info.path, bundle_id)
+            new_info = self.library.import_file(out)
+            self.refresh_library()
+            self.history.record("install", f"Bundle-ID geändert: {new_info.display_title}", bundle_id)
+            self.toasts.success("Bundle-ID geändert", bundle_id)
+        except Exception as exc:
+            msg = exc.user_text() if hasattr(exc, "user_text") else str(exc)
+            self.history.record("install", "Bundle-ID fehlgeschlagen", msg[:200], status="fail")
+            self.toasts.error("Bundle-ID fehlgeschlagen", msg[:300])
+
+    def _show_profiles(self) -> None:
+        s = self.settings.settings
+        dirs = [Path(s.signing.provisioning_dir)] if s.signing.provisioning_dir else []
+        from app.signing.local_provisioning import default_search_dirs
+
+        dlg = ProfilesDialog(dirs + default_search_dirs(), self)
+        dlg.use_folder.connect(self._set_prov_dir)
+        dlg.exec()
+
+    def _set_prov_dir(self, folder: str) -> None:
+        s = self.settings.settings
+        s.signing.provisioning_dir = folder
+        self.settings.save()
+        os.environ["DENIZ_PROVISIONING_DIR"] = folder
+        self.settings_page.load(s)
+        self.toasts.success("Profil-Ordner gesetzt", folder)
+
+    # -- downloads ---------------------------------------------------------------------------
     def _start_download(self, url: str) -> None:
         try:
             item = self.downloads.enqueue(url)
         except ValueError as exc:
-            self.dl_page.show_error(str(exc))
+            self.library_page.show_error(str(exc))
             return
-        self.dl_page.show_error("")
         self._dl_states[id(item)] = DownloadState.QUEUED
         self.history.record("download", f"Download gestartet: {item.dest.name}", url[:120])
         self.downloads.start(item, on_progress=lambda it: self.refresh_downloads())
         self.refresh_downloads()
-        self.statusBar().showMessage(f"Lade {item.dest.name} …")
+        self._switch(3)
+        self.library_page.tabs.setCurrentIndex(1)
 
     def _cancel_download(self, item: DownloadItem) -> None:
         self.downloads.cancel(item)
@@ -814,7 +887,7 @@ class MainWindow(QMainWindow):
             self.downloads.pause(item)
         self.refresh_downloads()
 
-    # -- settings ----------------------------------------------------------
+    # -- settings -------------------------------------------------------------------------------
     def _save_settings(self) -> None:
         s = self.settings.settings
         self.settings_page.collect(s)
@@ -837,8 +910,8 @@ class MainWindow(QMainWindow):
 
         apply_theme(QApplication.instance(), s.general.theme)
         self._refresh_theme_icon()
+        self._update_profile()
         self.toasts.success("Einstellungen gespeichert")
-        self.statusBar().showMessage("Einstellungen gespeichert")
 
     def _clear_creds(self) -> None:
         creds.clear_cached_credentials()
@@ -850,6 +923,7 @@ class MainWindow(QMainWindow):
                 f.write_text("", encoding="utf-8")
         except Exception:
             pass
+        self.logs_page.reload()
         self.toasts.success("Logs gelöscht")
 
     def _clear_cache(self) -> None:
@@ -880,7 +954,14 @@ class MainWindow(QMainWindow):
             self.settings.settings.first_launch_done = True
             self.settings.save()
 
-    # -- misc --------------------------------------------------------------
+    def show_pairing(self) -> None:
+        searched, names = list_pair_records()
+        if names:
+            self.toasts.info("Pairing-Dateien", f"{len(names)} Einträge (Namen only): {', '.join(names[:5])}")
+        else:
+            self.toasts.info("Pairing-Dateien", "Keine lokalen Pairing-Einträge gefunden.")
+        log.info("pairing search dirs: %s found: %s", [str(p) for p in searched], names[:10])
+
     def closeEvent(self, event) -> None:  # noqa: N802
         if self.settings.settings.general.minimize_to_tray and hasattr(self, "tray"):
             event.ignore()

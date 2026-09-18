@@ -7,7 +7,8 @@ Single source of truth for colors, radii, typography and shared widgets.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QVBoxLayout, QWidget
 
 # -- palette ---------------------------------------------------------------
 BG_APP = "#05070d"
@@ -20,8 +21,9 @@ BORDER_SOFT = "#16203a"
 TEXT = "#f2f5fa"
 MUTED = "#8b94a9"
 FAINT = "#5d6680"
-ACCENT = "#2f7bff"
+ACCENT = "#1683ff"
 ACCENT_DEEP = "#0a54d6"
+ACCENT_GLOW = "rgba(22,131,255,0.35)"
 CYAN = "#3fd2ff"
 GREEN = "#35d399"
 GREEN_BG = "rgba(53,211,153,0.12)"
@@ -103,7 +105,8 @@ QCheckBox::indicator {{
   border: 1px solid #33436b; background: #0e1730; }}
 QCheckBox::indicator:checked {{ background: {ACCENT}; border: 1px solid {ACCENT}; }}
 QToolTip {{ background: #141d36; color: {TEXT}; border: 1px solid {BORDER}; padding: 6px 9px; border-radius: 8px; }}
-QStatusBar {{ background: {BG_APP}; color: {FAINT}; font-size: 12px; }}
+QStatusBar {{ background: {BG_APP}; color: {FAINT}; font-size: 12px; border-top: 1px solid {BORDER_SOFT}; }}
+QLabel#statusOk {{ color: {GREEN}; font-size: 12.5px; font-weight: 600; }}
 QMenu {{ background: #0e1730; color: {TEXT}; border: 1px solid {BORDER}; border-radius: 10px; padding: 6px; }}
 QMenu::item {{ border-radius: 7px; padding: 8px 14px; font-size: 13px; }}
 QMenu::item:selected {{ background: #1b2a4d; }}
@@ -238,3 +241,97 @@ def empty_state(icon: str, title: str, subtitle: str, button_text: str = ""):
         btn.setObjectName("primary")
         lay.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
     return frame, btn
+
+
+def logo_badge(px: int = 56, glow: bool = False) -> QLabel:
+    """Own D-logo: gradient rounded badge with white D. No third-party marks."""
+    from PySide6.QtWidgets import QGraphicsDropShadowEffect
+
+    label = QLabel("D")
+    label.setFixedSize(px, px)
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    fs = int(px * 0.52)
+    label.setStyleSheet(
+        "QLabel {"
+        f"background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {ACCENT_DEEP}, stop:1 {ACCENT});"
+        f"border-radius: {px // 4}px; font-size: {fs}px; font-weight: 800; color: white; }}"
+    )
+    if glow:
+        eff = QGraphicsDropShadowEffect(label)
+        eff.setColor(QColor(22, 131, 255))
+        eff.setBlurRadius(28)
+        eff.setOffset(0, 0)
+        label.setGraphicsEffect(eff)
+    return label
+
+
+def app_badge(letter: str, color: str, px: int = 52) -> QLabel:
+    """Generic app icon badge (letter on color) — no copied brand logos."""
+    label = QLabel(letter[:1].upper() or "?")
+    label.setFixedSize(px, px)
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    label.setStyleSheet(
+        "QLabel {"
+        f"background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {color}, stop:1 {color});"
+        f"border-radius: {px // 4}px; font-size: {int(px * 0.42)}px; font-weight: 800; color: white; }}"
+    )
+    return label
+
+
+class DropZone(QFrame):
+    """Big drag & drop zone for IPA files (moved here to avoid import cycles)."""
+
+    clicked = Signal()
+    dropped = Signal(list)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("dropzone")
+        self.setAcceptDrops(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        lay = QVBoxLayout(self)
+        lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.setSpacing(6)
+        lay.setContentsMargins(20, 26, 20, 26)
+        from app.ui.icons import icon as make_icon
+
+        pic = QLabel()
+        pic.setPixmap(make_icon("download", 34, "#7aa8ff").pixmap(44, 44))
+        pic.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        t = QLabel("IPA-Datei hier hinziehen")
+        t.setObjectName("cardTitle")
+        t.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        s = QLabel("oder")
+        s.setObjectName("muted")
+        s.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.btn = QPushButton("Datei auswählen")
+        self.btn.setObjectName("primary")
+        self.btn.clicked.connect(self.clicked.emit)
+        lay.addWidget(pic)
+        lay.addWidget(t)
+        lay.addWidget(s)
+        lay.addWidget(self.btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        self.clicked.emit()
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if event.mimeData().hasUrls():
+            self.setProperty("active", True)
+            self.style().unpolish(self)
+            self.style().polish(self)
+            event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event) -> None:  # noqa: N802
+        self.setProperty("active", False)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        self.setProperty("active", False)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        if paths:
+            self.dropped.emit(paths)
+            event.acceptProposedAction()

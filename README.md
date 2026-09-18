@@ -9,21 +9,16 @@
 ![App screenshot](assets/screenshot-home.png)
 ![Library screenshot](assets/screenshot-library.png)
 
-## Features
+## Features (v1.0.0)
 
-- **Home-Dashboard** — Hero, Gerätestatus mit Speicher/Akku, Drag-&-Drop-Installer, Schnellzugriff, Aktivitäten
-- **Apps** — installierte + Bibliotheks-Apps mit Status (Grid/Liste, Suche, Details)
-- **IPA-Dateien** — Import, Drag & Drop, Suche, Filter, Sortierung, Kontextmenü (Installieren, Umbenennen, Ordner öffnen, Kategorie, Löschen)
+- **Home-Dashboard** — Hero mit D-Logo, Gerätekarte, Drag-&-Drop-Sideloading, Quick Actions (Library, URL, QR-Code), Meine Apps, Schnellzugriff, Neuigkeiten
+- **Apps** — installierte + Bibliotheks-Apps mit Status-Chips und Menü (Details, Installieren, Deinstallieren)
 - **Geräte** — USB-Erkennung, iOS-Version, Trust-Hinweise, echter Speicher/Akku, Serieninfos
-- **App-Bibliothek** — Sammlung nach Kategorien (Alle, Spiele, Social, Tools, Entertainment, Produktivität, Bildung)
-- **Downloads** — direkte IPA-URLs mit Fortschritt, Speed, ETA, Pause/Fortsetzen/Abbrechen, SHA-256, Auto-Import
-- **Verlauf** — Timeline aller Installationen, Downloads, Geräteereignisse und Fehler (filterbar)
-- **Globale Suche** — `Strg + K` über Apps, Dateien und Geräte
-- **Installation** — Select → Analyze → Detect → Signing → Install → Verify → Done, mit Live-Dialog
-- **Signierung** — kostenlos (7 Tage) / bezahlt / lokale Profile; Passwörter werden nie gespeichert
-- **Mitteilungen** — animierte Toasts (Erfolg/Fehler/Info)
+- **Bibliothek** — IPA-Dateien (Suche, Filter, Sortierung, Kontextmenü, Kategorien) + Downloads-Tab (Fortschritt, Speed, ETA, Pause, SHA-256)
+- **Logs** — App-Logs mit Level-Filter + Verlauf-Timeline aller Aktionen
+- **Aktionen** — IPA signieren, Bundle-ID ändern (eigene Apps), Provisioning-Profile, Pairing-Info, QR-Codes für Links
 - **Einstellungen** — Allgemein, Gerät, Installation, Mitteilungen, Erweitert, Über (komplett deutsch)
-- Dark Navy Premium-Design mit Hell/Dunkel-Umschalter, einklappbarer Sidebar, Tastaturkürzel (`Strg+K`, `Strg+1–8`, `Esc`)
+- **Shell** — Sidebar mit Profil, Topbar mit globaler Suche (`Strg + K`), Statusbar mit Live-Status, Toasts, Shortcuts (`Strg+1–6`, `Esc`)
 
 ## Requirements
 

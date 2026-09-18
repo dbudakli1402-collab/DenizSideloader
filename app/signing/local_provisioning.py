@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from app.signing.apple_developer import AppleDeveloperSigning
@@ -49,3 +50,26 @@ class LocalProvisioning(SigningProvider):
             "Uses provisioning profiles you already exported from Xcode / "
             "Apple Developer portal. Nothing is generated or bypassed."
         )
+
+
+def default_search_dirs() -> list[Path]:
+    """Candidate folders where users typically keep .mobileprovision files."""
+    home = Path.home()
+    candidates = [
+        Path(os.environ.get("DENIZ_PROVISIONING_DIR", "")) if os.environ.get("DENIZ_PROVISIONING_DIR") else None,
+        home / "Downloads" / "DenizSideloader",
+        home / "Documents" / "Provisioning Profiles",
+    ]
+    return [d for d in candidates if d is not None]
+
+
+def list_profiles(search_dirs: list[Path] | None = None) -> list[Path]:
+    """List .mobileprovision files (names/paths only — never parsed for secrets)."""
+    found: list[Path] = []
+    for d in search_dirs if search_dirs is not None else default_search_dirs():
+        try:
+            if d.is_dir():
+                found.extend(sorted(d.glob("*.mobileprovision")))
+        except Exception:
+            continue
+    return found

@@ -92,6 +92,10 @@ def main() -> int:
         str(ROOT / "build"),
         "--paths",
         str(ROOT),
+        "--icon",
+        str(ROOT / "assets" / "logo.ico"),
+        "--add-data",
+        str(ROOT / "assets" / "logo-64.png") + ";assets",
     ]
     for mod in EXCLUDES:
         cmd += ["--exclude-module", mod]

@@ -1,4 +1,4 @@
-"""Apps page: installed device apps + library apps, grid/list, status."""
+"""Apps-Seite v3: Karten mit Status-Chip und Drei-Punkte-Menü (Mockup)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,9 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -26,7 +28,8 @@ from app.ui import design as D
 class AppsPage(QWidget):
     install_ipa = Signal(IpaInfo)
     import_requested = Signal()
-    open_details = Signal(dict)  # device app dict or {"ipa": IpaInfo}
+    open_details = Signal(dict)
+    uninstall_app = Signal(dict)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -36,6 +39,9 @@ class AppsPage(QWidget):
         head = QLabel("Apps")
         head.setObjectName("pageTitle")
         root.addWidget(head)
+        sub = QLabel("Installierte Apps und Bibliothek im Überblick.")
+        sub.setObjectName("muted")
+        root.addWidget(sub)
 
         bar = QHBoxLayout()
         bar.setSpacing(10)
@@ -53,6 +59,7 @@ class AppsPage(QWidget):
         self.grid_wrap = QFrame()
         self.grid = QGridLayout(self.grid_wrap)
         self.grid.setSpacing(12)
+        self.grid.setRowStretch(99, 1)  # spacer row absorbs vertical slack
         root.addWidget(self.grid_wrap, 1)
         self.list = QListWidget()
         self.list.setSpacing(6)
@@ -67,32 +74,23 @@ class AppsPage(QWidget):
         self._library = library
         self._render()
 
-    def _query(self) -> str:
-        return self.search.text().strip().lower()
-
     def _render(self) -> None:
         is_grid = self.view.currentText() == "Grid"
         self.grid_wrap.setVisible(is_grid)
         self.list.setVisible(not is_grid)
-        q = self._query()
-        lib_by_bundle = {i.bundle_id: i for i in self._library}
-        rows: list[tuple[str, str, str, str, Any]] = []  # title, sub, status, kind, payload
+        q = self.search.text().strip().lower()
+        rows: list[tuple[str, str, str, str, Any]] = []
         for a in self._installed:
             title = str(a.get("name", "?"))
             if q and q not in title.lower() and q not in str(a.get("bundle_id", "")).lower():
                 continue
-            in_lib = str(a.get("bundle_id", "")) in lib_by_bundle
-            rows.append((title, f"Version {a.get('version', '?')}", "Installiert", "dev", a))
-            _ = in_lib
+            rows.append((title, f"v{str(a.get('version', '?'))}", "Aktiv", "dev", a))
         for info in self._library:
             if info.bundle_id in {str(a.get("bundle_id")) for a in self._installed}:
                 continue
             if q and q not in info.app_name.lower() and q not in info.bundle_id.lower():
                 continue
-            rows.append(
-                (info.display_title, f"Version {info.version} · {info.size_human}", "Nicht installiert", "ipa", info)
-            )
-        # clear grid
+            rows.append((info.display_title, f"v{info.version}", "Bibliothek", "ipa", info))
         while self.grid.count():
             taken = self.grid.takeAt(0)
             old = taken.widget() if taken is not None else None
@@ -103,7 +101,7 @@ class AppsPage(QWidget):
             empty, btn = D.empty_state(
                 "apps",
                 "Keine Apps gefunden",
-                "Passe die Suche an oder importiere eine IPA-Datei.",
+                "Verbinde dein Gerät oder importiere eine IPA-Datei.",
                 "IPA importieren",
             )
             self.grid.addWidget(empty, 0, 0)
@@ -112,64 +110,64 @@ class AppsPage(QWidget):
             return
         for n, (title, sub, status, kind, payload) in enumerate(rows):
             if is_grid:
-                self.grid.addWidget(self._card(title, sub, status, kind, payload), n // 3, n % 3)
+                self.grid.addWidget(self._card(title, sub, status, kind, payload), n // 4, n % 4)
             else:
                 li = QListWidgetItem()
-                card = self._card(title, sub, status, kind, payload, compact=True)
+                card = self._card(title, sub, status, kind, payload)
                 li.setSizeHint(card.sizeHint())
                 li.setData(32, (kind, payload))
                 self.list.addItem(li)
                 self.list.setItemWidget(li, card)
 
-    def _card(self, title: str, sub: str, status: str, kind: str, payload: Any, compact: bool = False) -> QFrame:
+    def _open_list_item(self, item: QListWidgetItem) -> None:
+        data = item.data(32)
+        if isinstance(data, tuple) and len(data) == 2:
+            self._open(data[0], data[1])
+
+    def _card(self, title: str, sub: str, status: str, kind: str, payload: Any) -> QFrame:
         frame, lay = D.card(obj="card2")
-        lay.setContentsMargins(16, 14, 16, 14)
+        frame.setMaximumWidth(360)
+        lay.setContentsMargins(14, 12, 14, 12)
         top = QHBoxLayout()
-        top.setSpacing(12)
-        badge = QLabel(title[:1].upper() or "?")
-        badge.setFixedSize(44, 44)
-        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        badge.setStyleSheet(
-            "background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #0a54d6, stop:1 #2f7bff);"
-            "border-radius: 12px; font-size: 20px; font-weight: 800; color: white;"
-        )
-        texts = QVBoxLayout()
-        texts.setSpacing(2)
+        top.setSpacing(10)
+        top.addWidget(D.app_badge(title[:1], "#2b6cb0" if kind == "dev" else "#3a4763", 46))
+        tx = QVBoxLayout()
+        tx.setSpacing(1)
         t = QLabel(title)
         t.setObjectName("cardTitle")
+        t.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         s = QLabel(sub)
         s.setObjectName("muted")
-        texts.addWidget(t)
-        texts.addWidget(s)
-        top.addWidget(badge)
-        top.addLayout(texts, 1)
-        top.addWidget(D.chip(status, "green" if status == "Installiert" else "gray"))
+        s.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        tx.addWidget(t)
+        tx.addWidget(s)
+        top.addLayout(tx, 1)
+        dots = QPushButton("···")
+        dots.setObjectName("iconbtn")
+        dots.setToolTip("Menü")
+        dots.clicked.connect(lambda _=False, k=kind, p=payload: self._menu(k, p, dots))
+        top.addWidget(dots, alignment=Qt.AlignmentFlag.AlignTop)
         lay.addLayout(top)
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        if kind == "ipa":
-            b1 = QPushButton("Installieren")
-            b1.setObjectName("primary")
-            b1.clicked.connect(lambda _=False, p=payload: self.install_ipa.emit(p))
-            row.addWidget(b1)
-        else:
-            b0 = QPushButton("Details")
-            b0.setObjectName("ghost")
-            b0.clicked.connect(lambda _=False, p=payload: self.open_details.emit(p))
-            row.addWidget(b0)
-        if kind == "ipa":
-            b2 = QPushButton("Details")
-            b2.setObjectName("ghost")
-            b2.clicked.connect(lambda _=False, p=payload: self.open_details.emit({"ipa": p}))
-            row.addWidget(b2)
-        row.addStretch(1)
-        lay.addLayout(row)
-        if compact:
-            frame.setMaximumHeight(150)
+        chip = D.chip(status, "green" if status == "Aktiv" else "blue")
+        chip.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        lay.addWidget(chip)
+        lay.addStretch(1)
         return frame
 
-    def _open_list_item(self, item: QListWidgetItem) -> None:
-        kind, payload = item.data(32)
+    def _menu(self, kind: str, payload: Any, anchor: QWidget) -> None:
+        menu = QMenu(self)
+        a_det = menu.addAction("Details")
+        a_inst = menu.addAction("Installieren") if kind == "ipa" else None
+        a_un = menu.addAction("Deinstallieren") if kind == "dev" else None
+        chosen = menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+        if chosen == a_det:
+            self._open(kind, payload)
+        elif a_inst is not None and chosen == a_inst:
+            self.install_ipa.emit(payload)
+        elif a_un is not None and chosen == a_un:
+            self.uninstall_app.emit(payload)
+
+    def _open(self, kind: str, payload: Any) -> None:
         if kind == "ipa":
             self.open_details.emit({"ipa": payload})
         else:

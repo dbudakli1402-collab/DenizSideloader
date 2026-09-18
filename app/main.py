@@ -57,6 +57,9 @@ def main() -> int:
     app.setApplicationName(__app_name__)
     app.setApplicationVersion(__version__)
     app.setOrganizationName("DenizSideloader")
+    from app.ui.branding import window_icon
+
+    app.setWindowIcon(window_icon())
     apply_theme(app, s.general.theme if s.general.theme in ("dark", "light") else "dark")
 
     window = MainWindow(

@@ -196,6 +196,26 @@ class PyMobileDeviceProvider(DeviceProvider):
             log.warning("device details unavailable: %s", exc)
             return {}
 
+    def uninstall_app(self, udid: str, bundle_id: str) -> tuple[bool, str]:
+        """Remove an app via the installation proxy. Honest (ok, message)."""
+
+        async def _query() -> None:
+            from pymobiledevice3.lockdown import create_using_usbmux
+            from pymobiledevice3.services.installation_proxy import InstallationProxyService
+
+            lockdown = await create_using_usbmux(udid)
+            async with InstallationProxyService(lockdown=lockdown) as inst:
+                await inst.uninstall(bundle_id)
+
+        try:
+            _run(_query())
+            return True, "App wurde entfernt."
+        except Exception as exc:
+            msg = str(exc)
+            if "trust" in msg.lower() or "pair" in msg.lower():
+                return False, "iPhone vertraut diesem Computer nicht. Entsperren, „Vertrauen“, erneut versuchen."
+            return False, f"Entfernen fehlgeschlagen: {msg[:300]}"
+
     def help_text(self) -> str:
         return (
             "pymobiledevice3 backend (open-source, bundled in the release build).\n"
