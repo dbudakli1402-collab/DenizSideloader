@@ -26,6 +26,10 @@ from PySide6.QtWidgets import (
 )
 
 from app import __app_name__, __version__
+from app.companion.anisette import SERVERS as SERVERS_ANI
+from app.companion.anisette import AnisetteState, check_reachable, normalize_server
+from app.companion.installers import CompanionInstaller
+from app.companion.models import INSTALLERS, AppleSession, InstallerDef
 from app.core.config import AppConfig
 from app.core.logging import get_logger
 from app.device.interface import DeviceService
@@ -44,12 +48,19 @@ from app.storage.history import HistoryStore
 from app.storage.settings import SettingsStore
 from app.ui import design as D
 from app.ui.dialogs.app_details import AppDetailsDialog
+from app.ui.dialogs.companion_dialogs import (
+    AppIdsDialog,
+    CertificatesDialog,
+    CompanionProgressDialog,
+    PairingDialog,
+)
 from app.ui.dialogs.install_dialog import InstallDialog
 from app.ui.dialogs.quick_actions import BundleIdDialog, ProfilesDialog, QrDialog, SignDialog, UrlDownloadDialog
 from app.ui.dialogs.search_dialog import SearchDialog
 from app.ui.dialogs.wizard import FirstLaunchWizard
 from app.ui.icons import icon as make_icon
 from app.ui.pages.apps import AppsPage
+from app.ui.pages.companion import CompanionPage
 from app.ui.pages.devices import DevicesPage
 from app.ui.pages.home import HomePage
 from app.ui.pages.library import LibraryPage
@@ -63,10 +74,26 @@ NAV = [
     ("Home", "home"),
     ("Apps", "apps"),
     ("Geräte", "phone"),
+    ("Companion", "link"),
     ("Bibliothek", "book"),
     ("Logs", "history"),
     ("Einstellungen", "gear"),
 ]
+
+
+class CompanionWorker(QThread):
+    stepped = Signal(str, float, str)
+    finished_job = Signal(object)
+
+    def __init__(self, runner: CompanionInstaller, definition, udid: str) -> None:
+        super().__init__()
+        self.runner = runner
+        self.definition = definition
+        self.udid = udid
+
+    def run(self) -> None:
+        job = self.runner.run(self.definition, self.udid, on_step=self.stepped.emit)
+        self.finished_job.emit(job)
 
 
 class InstallWorker(QThread):
@@ -106,6 +133,10 @@ class MainWindow(QMainWindow):
         self._dl_states: dict[int, DownloadState] = {}
         self._details_cache: dict[str, dict] = {}
         self._installed_cache: list[dict] = []
+        self._selected_udid: str | None = None
+        self.session = AppleSession()
+        self.anisette = AnisetteState(config.app_data_dir / "anisette")
+        self.companion_runner = CompanionInstaller(downloads, installer)
 
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.setWindowTitle(f"{__app_name__} v{__version__}")
@@ -135,10 +166,19 @@ class MainWindow(QMainWindow):
         self.home = HomePage()
         self.apps = AppsPage()
         self.devices_page = DevicesPage()
+        self.companion = CompanionPage()
         self.library_page = LibraryPage()
         self.logs_page = LogsPage(config.log_dir / "deniz-sideloader.log")
         self.settings_page = SettingsPage()
-        self._pages = [self.home, self.apps, self.devices_page, self.library_page, self.logs_page, self.settings_page]
+        self._pages = [
+            self.home,
+            self.apps,
+            self.devices_page,
+            self.companion,
+            self.library_page,
+            self.logs_page,
+            self.settings_page,
+        ]
         for p in self._pages:
             self.stack.addWidget(p)
 
@@ -146,6 +186,12 @@ class MainWindow(QMainWindow):
         self._wire()
         self._shortcuts()
         self._tray()
+        from PySide6.QtCore import QTimer as _QTimer
+
+        self._log_timer = _QTimer(self)
+        self._log_timer.setInterval(5000)
+        self._log_timer.timeout.connect(self._maybe_refresh_logs)
+        self._log_timer.start()
         self.refresh_all()
 
     # -- shell -------------------------------------------------------------
@@ -234,7 +280,7 @@ class MainWindow(QMainWindow):
         b_set.setObjectName("iconbtn")
         b_set.setIcon(make_icon("gear", 18))
         b_set.setToolTip("Einstellungen")
-        b_set.clicked.connect(lambda: self._switch(5))
+        b_set.clicked.connect(lambda: self._switch(6))
         lay.addWidget(b_set)
         for glyph, tip, slot in (
             ("min", "Minimieren", self.showMinimized),
@@ -278,10 +324,27 @@ class MainWindow(QMainWindow):
         self.home.action_sign.connect(self._quick_sign)
         self.home.action_bundle.connect(self._quick_bundle)
         self.home.action_profiles.connect(self._show_profiles)
-        self.home.action_logs.connect(lambda: self._switch(4))
+        self.home.action_logs.connect(lambda: self._switch(5))
         self.home.install_ipa.connect(lambda info: self._install_path(info.path))
         self.home.open_details.connect(self._show_details)
         self.home.uninstall_app.connect(self._uninstall_app)
+        self.companion.login_requested.connect(self._companion_login)
+        self.companion.logout_requested.connect(self._companion_logout)
+        self.companion.refresh_devices.connect(lambda: self.refresh_devices(True))
+        self.companion.device_selected.connect(self._select_device)
+        self.companion.open_pairing.connect(self._open_pairing)
+        self.companion.open_certificates.connect(self._open_certificates)
+        self.companion.open_app_ids.connect(self._open_app_ids)
+        self.companion.install_with.connect(self._install_with)
+        self.companion.import_ipa.connect(self.import_ipa)
+        self.companion.anisette_changed.connect(self._anisette_changed)
+        self.companion.reset_anisette.connect(self._reset_anisette)
+        self.companion.delete_pairing.connect(self._delete_pairing)
+        self.companion.view_logs.connect(lambda: self._switch(5))
+        self.companion.keyring_toggled.connect(self._keyring_toggled)
+        self.companion.btn_github.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://github.com/dbudakli1402-collab/DenizSideloader"))
+        )
         self.apps.install_ipa.connect(lambda info: self._install_path(info.path))
         self.apps.import_requested.connect(self.import_ipa)
         self.apps.open_details.connect(self._show_details)
@@ -318,10 +381,18 @@ class MainWindow(QMainWindow):
         sc = QShortcut(QKeySequence("Ctrl+K"), self)
         sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
         sc.activated.connect(self._open_search)
-        for i in range(6):
+        for i in range(7):
             s = QShortcut(QKeySequence(f"Ctrl+{i + 1}"), self)
             s.setContext(Qt.ShortcutContext.ApplicationShortcut)
             s.activated.connect(lambda _=False, n=i: self._switch(n))
+        for seq, slot in [
+            ("Ctrl+R", lambda: self.refresh_devices(True)),
+            ("Ctrl+P", self._open_pairing),
+            ("Ctrl+L", lambda: self._switch(5)),
+        ]:
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
+            sc.activated.connect(slot)
 
     def _tray(self) -> None:
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -350,10 +421,10 @@ class MainWindow(QMainWindow):
             self.refresh_devices()
         if row in (0, 1):
             self.refresh_apps()
-        if row == 3:
+        if row == 4:
             self.refresh_library()
             self.refresh_downloads()
-        if row == 4:
+        if row == 5:
             self.logs_page.reload()
             self.logs_page.set_events(self.history.list("all"))
 
@@ -441,8 +512,15 @@ class MainWindow(QMainWindow):
         return super().eventFilter(watched, event)
 
     def _goto_library_files(self) -> None:
-        self._switch(3)
+        self._switch(4)
         self.library_page.tabs.setCurrentIndex(0)
+
+    def _maybe_refresh_logs(self) -> None:
+        try:
+            if self.stack.currentIndex() == 5:
+                self.logs_page.reload()
+        except Exception:
+            pass
 
     # -- search ------------------------------------------------------------------
     def _open_search(self) -> None:
@@ -463,6 +541,20 @@ class MainWindow(QMainWindow):
         self.logs_page.set_events(self.history.list("all"))
         self.home.set_apps(self._installed_cache, self.library.list())
         self._update_profile()
+        s = self.settings.settings
+        email = ""
+        if s.companion.use_keyring:
+            try:
+                email = creds.load_secret("apple-id-username") or s.signing.apple_id_username
+            except Exception:
+                email = s.signing.apple_id_username
+        else:
+            email = s.signing.apple_id_username
+        self.companion.load_settings(
+            s.companion.anisette_server, s.companion.anisette_custom, s.companion.use_keyring, email or ""
+        )
+        if self.session.email:
+            self.companion.set_login_state(f"Sitzung vorbereitet ({self.session.email}).", True)
 
     def refresh_devices(self, manual: bool = False) -> None:
         found = self.devices.refresh()
@@ -477,6 +569,9 @@ class MainWindow(QMainWindow):
         self._known_devices = current
 
         dev = found[0] if found else None
+        if self._selected_udid and self._selected_udid not in current:
+            self._selected_udid = None
+        self.companion.set_devices(found, selected=self._selected_udid)
         details: dict = {}
         if dev is not None:
             details = self._device_details(dev.udid)
@@ -862,6 +957,233 @@ class MainWindow(QMainWindow):
         self.settings_page.load(s)
         self.toasts.success("Profil-Ordner gesetzt", folder)
 
+    # -- companion ----------------------------------------------------------------------------
+    def _select_device(self, udid: str) -> None:
+        self._selected_udid = udid
+        self.companion.set_devices(self.devices.cached, selected=udid)
+
+    def _companion_login(self, email: str, password: str, save_username: bool) -> None:
+        email = (email or "").strip().lower()
+        if "@" not in email or "." not in email.split("@")[-1]:
+            self.companion.set_login_state("Bitte eine gültige Apple-ID-E-Mail eingeben.", False)
+            return
+        if len(password) < 1:
+            self.companion.set_login_state("Bitte das Apple-ID-Passwort eingeben.", False)
+            return
+        self.session.begin(email, password)
+        server, _ = self._current_anisette()
+        ok, detail = check_reachable(server)
+        if not ok:
+            self.session.invalidate()
+            self.companion.set_login_state(f"Anisette-Server nicht erreichbar: {detail}", False)
+            return
+        pwd = self.session.take_password()  # consume + wipe immediately
+        _ = pwd
+        if save_username:
+            self._store_username_hint(email)
+        s = self.settings.settings
+        s.signing.apple_id_username = email
+        self.settings.save()
+        self.session.mark_ready(f"Sitzung vorbereitet ({email}).")
+        self._update_profile()
+        self.history.record("device", f"Apple-Sitzung vorbereitet: {email}", detail)
+        self.companion.set_login_state(
+            "Sitzung vorbereitet. Hinweis: Die vollständige Apple-Anmeldung (GSA-Protokoll) "
+            "folgt per Update — das Passwort wurde nirgendwo gespeichert.",
+            True,
+        )
+        self.toasts.success("Sitzung vorbereitet", email)
+
+    def _companion_logout(self) -> None:
+        self.session.invalidate()
+        self.companion.set_login_state("", True)
+        self.toasts.info("Abgemeldet", "Sitzung wurde verworfen.")
+
+    def _store_username_hint(self, email: str) -> None:
+        s = self.settings.settings
+        if s.companion.use_keyring:
+            try:
+                creds.store_secret("apple-id-username", email)
+                return
+            except Exception as exc:
+                log.warning("keychain hint failed: %s", exc)
+        s.signing.apple_id_username = email
+        self.settings.save()
+
+    def _current_anisette(self) -> tuple[str, bool]:
+        s = self.settings.settings
+        if s.companion.anisette_custom:
+            return s.companion.anisette_server, True
+        for host, _label in SERVERS_ANI:
+            if host == s.companion.anisette_server:
+                return host, False
+        return s.companion.anisette_server, s.companion.anisette_custom
+
+    def _anisette_changed(self, server: str, custom: bool) -> None:
+        s = self.settings.settings
+        try:
+            clean = normalize_server(server) if custom else server
+        except ValueError as exc:
+            self.companion.set_anisette_state(str(exc))
+            return
+        s.companion.anisette_server = server.strip()
+        s.companion.anisette_custom = custom
+        self.settings.save()
+        ok, detail = check_reachable(clean)
+        has = self.anisette.has_state()
+        self.companion.set_anisette_state(f"{detail} Lokaler Status: {'vorhanden' if has else 'leer'}.")
+        self.history.record("device", f"Anisette-Server: {clean}", detail)
+
+    def _reset_anisette(self) -> None:
+        if (
+            QMessageBox.question(self, "Zurücksetzen?", "Lokalen Anisette-Status wirklich löschen?")
+            != QMessageBox.StandardButton.Yes
+        ):
+            return
+        removed = self.anisette.reset()
+        try:
+            creds.delete_secret("deniz-anisette-state")
+        except Exception:
+            pass
+        self.companion.set_anisette_state("Status zurückgesetzt." if removed else "Kein Status vorhanden.")
+        self.history.record("device", "Anisette-Status zurückgesetzt", status="info")
+        self.toasts.success("Anisette zurückgesetzt")
+
+    def _delete_pairing(self) -> None:
+        if (
+            QMessageBox.question(self, "Löschen?", "Gespeicherte Pairing-Einträge wirklich löschen?")
+            != QMessageBox.StandardButton.Yes
+        ):
+            return
+        from app.device.pairing import delete_stored
+
+        n = delete_stored()
+        self._selected_udid = None
+        self.refresh_devices()
+        self.history.record("device", f"Pairing gelöscht ({n} Einträge)", status="info")
+        self.toasts.success("Pairing gelöscht", f"{n} Einträge entfernt.")
+
+    def _keyring_toggled(self, dont_use: bool) -> None:
+        s = self.settings.settings
+        s.companion.use_keyring = not dont_use
+        self.settings.save()
+        self.toasts.info(
+            "Schlüsselbund " + ("deaktiviert" if dont_use else "aktiviert"),
+            "Nur der Benutzername-Hinweis ist betroffen — Passwörter werden nie gespeichert.",
+        )
+
+    def _open_pairing(self) -> None:
+        from app.device.pairing import list_pair_records
+
+        _searched, names = list_pair_records()
+        dlg = PairingDialog(names, self)
+        dlg.export_requested.connect(self._export_pairing)
+        dlg.delete_requested.connect(self._delete_pairing)
+        dlg.open_folder.connect(self._open_pairing_folder)
+        dlg.exec()
+
+    def _export_pairing(self) -> None:
+        from app.device.pairing import export_pairing
+
+        found = self.devices.cached or self.devices.refresh()
+        udid = self._selected_udid or (found[0].udid if found else "")
+        if not udid:
+            self.toasts.error("Kein Gerät", "Verbinde zuerst ein iPhone.")
+            return
+        from PySide6.QtWidgets import QFileDialog
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Pairing-Datei exportieren",
+            f"{udid}.mobiledevicepairing",
+            "Pairing (*.mobiledevicepairing);;Alle (*)",
+        )
+        if not path:
+            return
+        try:
+            out = export_pairing(udid, Path(path))
+            self.history.record("device", f"Pairing exportiert: {out.name}", status="info")
+            self.toasts.success("Exportiert", out.name)
+        except Exception as exc:
+            self.toasts.error("Export fehlgeschlagen", str(exc)[:250])
+
+    def _open_pairing_folder(self) -> None:
+        from app.device.pairing import pair_records_folder
+
+        folder = pair_records_folder()
+        if folder is None:
+            self.toasts.info("Pairing", "Kein lokaler Ordner gefunden.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def _open_certificates(self) -> None:
+        s = self.settings.settings
+        dirs = [Path(s.signing.provisioning_dir)] if s.signing.provisioning_dir else []
+        from app.signing.local_provisioning import default_search_dirs, list_profiles
+
+        dlg = CertificatesDialog(list_profiles(dirs + default_search_dirs()), portal_locked=True, parent=self)
+        dlg.exec()
+
+    def _open_app_ids(self) -> None:
+        bids = [i.bundle_id for i in self.library.list()]
+        dlg = AppIdsDialog(bids, portal_locked=True, parent=self)
+        dlg.exec()
+
+    def _install_with(self, key: str) -> None:
+        definition = next((d for d in INSTALLERS if d.key == key), None)
+        if definition is None:
+            return
+        found = self.devices.cached or self.devices.refresh()
+        udid = self._selected_udid or (found[0].udid if found else "")
+        if not udid:
+            self.toasts.error("Kein iPhone gefunden", "Verbinde dein iPhone per USB und entsperre es.")
+            self._switch(2)
+            return
+        if self.settings.settings.iphone.confirm_before_install:
+            if (
+                QMessageBox.question(self, "Installieren?", f"{definition.title} herunterladen und installieren?")
+                != QMessageBox.StandardButton.Yes
+            ):
+                return
+        dlg = CompanionProgressDialog(definition.title, self)
+        dlg.show()
+        self._companion_worker = CompanionWorker(self.companion_runner, definition, udid)
+        self._companion_worker.stepped.connect(dlg.update_step)
+        self._companion_worker.finished_job.connect(lambda job: self._companion_done(job, dlg, definition))
+        self._companion_worker.start()
+
+    def _companion_done(self, job: InstallationJob, dlg: CompanionProgressDialog, definition: InstallerDef) -> None:
+        try:
+            Path(job.ipa_path).with_name(Path(job.ipa_path).stem + ".signed.ipa").unlink(missing_ok=True)
+        except Exception:
+            pass
+        if job.step.value == "done":
+            try:
+                self.library.import_file(job.ipa_path)
+                self.refresh_library()
+            except Exception:
+                pass
+            self.history.record("install", f"Installiert: {definition.title}", definition.bundle_id)
+            if self.settings.settings.notify.on_success:
+                self.toasts.success("Installation abgeschlossen", definition.title)
+            dlg.accept()
+            self.refresh_apps()
+        else:
+            self.history.record(
+                "install",
+                f"Installation fehlgeschlagen: {definition.title}",
+                job.error_detail[:200],
+                status="fail",
+            )
+            dlg.reject()
+            if self.settings.settings.notify.on_error:
+                self.toasts.error(job.error_title or "Installation fehlgeschlagen", job.error_detail[:250])
+            self._friendly_error(
+                job.error_title or "Installation fehlgeschlagen",
+                job.error_detail,
+                "\n".join(job.log[-8:]),
+            )
+
     # -- downloads ---------------------------------------------------------------------------
     def _start_download(self, url: str) -> None:
         try:
@@ -873,7 +1195,7 @@ class MainWindow(QMainWindow):
         self.history.record("download", f"Download gestartet: {item.dest.name}", url[:120])
         self.downloads.start(item, on_progress=lambda it: self.refresh_downloads())
         self.refresh_downloads()
-        self._switch(3)
+        self._switch(4)
         self.library_page.tabs.setCurrentIndex(1)
 
     def _cancel_download(self, item: DownloadItem) -> None:

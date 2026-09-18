@@ -62,6 +62,13 @@ class AdvancedSettings:
 
 
 @dataclass
+class CompanionSettings:
+    anisette_server: str = "ani.sidestore.io"
+    anisette_custom: bool = False
+    use_keyring: bool = True  # False = username hint in settings JSON instead
+
+
+@dataclass
 class AppSettings:
     general: GeneralSettings = field(default_factory=GeneralSettings)
     iphone: IphoneSettings = field(default_factory=IphoneSettings)
@@ -71,6 +78,7 @@ class AppSettings:
     install: InstallSettings = field(default_factory=InstallSettings)
     notify: NotifySettings = field(default_factory=NotifySettings)
     advanced: AdvancedSettings = field(default_factory=AdvancedSettings)
+    companion: CompanionSettings = field(default_factory=CompanionSettings)
     first_launch_done: bool = False
     recent_ipas: list[str] = field(default_factory=list)
 
@@ -130,6 +138,8 @@ class SettingsStore:
             s.notify = NotifySettings(**{k: nt[k] for k in NotifySettings.__dataclass_fields__ if k in nt})
             ad = raw.get("advanced", {})
             s.advanced = AdvancedSettings(**{k: ad[k] for k in AdvancedSettings.__dataclass_fields__ if k in ad})
+            cp = raw.get("companion", {})
+            s.companion = CompanionSettings(**{k: cp[k] for k in CompanionSettings.__dataclass_fields__ if k in cp})
             s.first_launch_done = bool(raw.get("first_launch_done", False))
             rec = raw.get("recent_ipas", [])
             s.recent_ipas = [str(x) for x in rec if isinstance(x, str)][:16]

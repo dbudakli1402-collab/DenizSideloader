@@ -19,6 +19,7 @@
 - **Aktionen** — IPA signieren, Bundle-ID ändern (eigene Apps), Provisioning-Profile, Pairing-Info, QR-Codes für Links
 - **Einstellungen** — Allgemein, Gerät, Installation, Mitteilungen, Erweitert, Über (komplett deutsch)
 - **Shell** — Sidebar mit Profil, Topbar mit globaler Suche (`Strg + K`), Statusbar mit Live-Status, Toasts, Shortcuts (`Strg+1–6`, `Esc`)
+- **Companion (AltServer-Workflow)** — Apple-ID-Sitzung (Passwort nur im RAM, nie gespeichert), Anisette-Server-Auswahl + Status-Reset, offizielle SideStore/LiveContainer-Installer (Download → Install → Pairing), Pairing-Export/Löschen, Zertifikats-/App-ID-Ansichten, Schlüsselbund-Option (Flows nach iloader-Vorbild, siehe docs/iloader-integration.md)
 
 ## Requirements
 
