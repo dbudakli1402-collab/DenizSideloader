@@ -78,6 +78,10 @@ QPushButton#ghost {{ background: #131c33; color: {TEXT}; border: 1px solid {BORD
 QPushButton#ghost:hover {{ background: #1a2542; border: 1px solid #2c3f6b; }}
 QPushButton#iconbtn {{ background: transparent; border: none; border-radius: 9px; padding: 7px; }}
 QPushButton#iconbtn:hover {{ background: #16203a; }}
+QPushButton#linkbtn {{
+  background: transparent; border: none; color: {ACCENT};
+  font-size: 13px; padding: 2px; text-align: left; }}
+QPushButton#linkbtn:hover {{ color: {CYAN}; }}
 QPushButton#danger {{ background: {RED_BG}; color: {RED}; border: 1px solid rgba(255,107,107,0.35);
   border-radius: 10px; padding: 8px 14px; font-weight: 600; }}
 QFrame#tile {{ background: #131c33; border: 1px solid {BORDER}; border-radius: 12px; }}

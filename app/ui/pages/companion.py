@@ -69,7 +69,7 @@ class CompanionPage(QWidget):
         head = QHBoxLayout()
         head.setSpacing(10)
         head.addWidget(D.logo_badge(40, glow=True))
-        title = QLabel("DenizSigner")
+        title = QLabel("DenizSideloader")
         title.setStyleSheet("font-size: 21px; font-weight: 800;")
         sub = QLabel("Sideloading Companion")
         sub.setObjectName("muted")
@@ -128,15 +128,22 @@ class CompanionPage(QWidget):
         mgmt, ml = D.card()
         self.mgmt_cap = _cap("management")
         ml.addWidget(self.mgmt_cap)
-        self.mgmt = QListWidget()
-        self.mgmt.setObjectName("nav")
-        self.mgmt.itemClicked.connect(self._mgmt_clicked)
-        self.mgmt.setMaximumHeight(178)
-        ml.addWidget(self.mgmt)
+        self.mgmt_rows: list[tuple[D.TileButton, QLabel, QLabel]] = []
+        for idx in range(4):
+            tile = D.TileButton()
+            row = QHBoxLayout(tile)
+            row.setContentsMargins(12, 9, 12, 9)
+            name = QLabel()
+            name.setStyleSheet("font-size: 13px; font-weight: 600;")
+            sc = QLabel()
+            sc.setObjectName("muted")
+            row.addWidget(name, 1)
+            row.addWidget(sc)
+            tile.clicked.connect(lambda _=False, n=idx: self._mgmt_activated(n))
+            ml.addWidget(tile)
+            self.mgmt_rows.append((tile, name, sc))
         left.addWidget(mgmt)
         left.addStretch(1)
-
-        # DEVICES
         dev, dl = D.card()
         dh = QHBoxLayout()
         self.dev_cap = _cap("devices")
@@ -173,9 +180,9 @@ class CompanionPage(QWidget):
         grid.setSpacing(10)
         for inst in INSTALLERS:
             tile = D.TileButton()
-            row = QVBoxLayout(tile)
-            row.setContentsMargins(10, 12, 10, 12)
-            row.setSpacing(2)
+            cell = QVBoxLayout(tile)
+            cell.setContentsMargins(10, 12, 10, 12)
+            cell.setSpacing(2)
             t = QLabel(inst.title)
             t.setObjectName("cardTitle")
             t.setWordWrap(True)
@@ -184,8 +191,8 @@ class CompanionPage(QWidget):
             s.setObjectName("muted")
             s.setWordWrap(True)
             s.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            row.addWidget(t)
-            row.addWidget(s)
+            cell.addWidget(t)
+            cell.addWidget(s)
             tile.clicked.connect(lambda _=False, k=inst.key: self.install_with.emit(k))
             grid.addWidget(tile, 1)
         self.btn_import = QPushButton()
@@ -207,9 +214,10 @@ class CompanionPage(QWidget):
             self.combo_ani.addItem(f"{label} ({host})", host)
         sl.addWidget(self.combo_ani)
         self.btn_custom = QPushButton()
-        self.btn_custom.setObjectName("ghost")
+        self.btn_custom.setObjectName("linkbtn")
+        self.btn_custom.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_custom.clicked.connect(self._toggle_custom)
-        sl.addWidget(self.btn_custom)
+        sl.addWidget(self.btn_custom, alignment=Qt.AlignmentFlag.AlignLeft)
         self.edit_custom = QLineEdit()
         self.edit_custom.setPlaceholderText("ani.deinserver.de")
         self.edit_custom.setVisible(False)
@@ -273,9 +281,10 @@ class CompanionPage(QWidget):
         self.cb_save.setText(self._t("save_user"))
         self.btn_login.setText(self._t("login"))
         self.mgmt_cap.setText(self._t("management").upper())
-        self.mgmt.clear()
-        for key, sc in zip(self.MGMT_KEYS, self.MGMT_SHORTCUTS, strict=True):
-            QListWidgetItem(f"{self._t(key)}   ·   {sc}", self.mgmt)
+        mgmt_names = [self._t("mgmt_pairing"), self._t("mgmt_refresh"), self._t("mgmt_certs"), self._t("mgmt_appids")]
+        for (_, name, sc), label, shortcut in zip(self.mgmt_rows, mgmt_names, self.MGMT_SHORTCUTS, strict=True):
+            name.setText(label)
+            sc.setText(shortcut)
         self.dev_cap.setText(self._t("devices").upper())
         self.dev_hint.setText(self._t("pick_device"))
         self.btn_refresh.setText(self._t("refresh"))
@@ -312,8 +321,7 @@ class CompanionPage(QWidget):
         self.login_requested.emit(self.edit_email.text(), self.edit_pass.text(), self.cb_save.isChecked())
         self.edit_pass.clear()
 
-    def _mgmt_clicked(self, item: QListWidgetItem) -> None:
-        idx = self.mgmt.row(item)
+    def _mgmt_activated(self, idx: int) -> None:
         [self.open_pairing.emit, self.refresh_devices.emit, self.open_certificates.emit, self.open_app_ids.emit][idx]()
 
     def _dev_clicked(self, item: QListWidgetItem) -> None:

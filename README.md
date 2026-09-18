@@ -7,6 +7,7 @@
 [![Release](https://img.shields.io/github/v/release/dbudakli1402-collab/DenizSideloader)](https://github.com/dbudakli1402-collab/DenizSideloader/releases)
 
 ![App screenshot](assets/screenshot-home.png)
+![Companion screenshot](assets/screenshot-companion.png)
 ![Library screenshot](assets/screenshot-library.png)
 
 ## Features (v1.0.0)
