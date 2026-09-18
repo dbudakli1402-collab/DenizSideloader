@@ -31,6 +31,7 @@ class SettingsPage(QWidget):
     browse_downloads = Signal()
     browse_provisioning = Signal()
     open_github = Signal()
+    check_updates = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -179,7 +180,11 @@ class SettingsPage(QWidget):
         b_gh = QPushButton("GitHub öffnen")
         b_gh.setObjectName("ghost")
         b_gh.clicked.connect(self.open_github.emit)
+        b_up = QPushButton("Auf Updates prüfen")
+        b_up.setObjectName("ghost")
+        b_up.clicked.connect(self.check_updates.emit)
         lay.addWidget(b_gh, alignment=Qt.AlignmentFlag.AlignLeft)
+        lay.addWidget(b_up, alignment=Qt.AlignmentFlag.AlignLeft)
         body.addWidget(c)
 
         self.btn_save = QPushButton("Speichern")

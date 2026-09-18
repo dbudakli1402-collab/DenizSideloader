@@ -193,6 +193,22 @@ class MainWindow(QMainWindow):
         self._log_timer.timeout.connect(self._maybe_refresh_logs)
         self._log_timer.start()
         self.refresh_all()
+        from threading import Thread as _Thread
+
+        def _auto_update() -> None:
+            try:
+                from app import __version__ as _v
+                from app.core.update import check_for_update
+
+                newer, tag, url, _notes = check_for_update(_v)
+                if newer:
+                    self.history.record("download", f"Update verfügbar: {tag}", url)
+                    if self.settings.settings.notify.on_download:
+                        self.toasts.info("Update verfügbar", f"{tag} ist da — siehe GitHub Releases.")
+            except Exception:
+                pass
+
+        _Thread(target=_auto_update, daemon=True).start()
 
     # -- shell -------------------------------------------------------------
     def _build_sidebar(self, root: QHBoxLayout) -> None:
@@ -206,7 +222,7 @@ class MainWindow(QMainWindow):
 
         brand = QHBoxLayout()
         brand.setSpacing(10)
-        brand.addWidget(D.logo_badge(40))
+        brand.addWidget(D.logo_badge(40, glow=True))
         bcol = QVBoxLayout()
         bcol.setSpacing(0)
         b = QLabel("Deniz Sideloader")
@@ -342,6 +358,10 @@ class MainWindow(QMainWindow):
         self.companion.delete_pairing.connect(self._delete_pairing)
         self.companion.view_logs.connect(lambda: self._switch(5))
         self.companion.keyring_toggled.connect(self._keyring_toggled)
+        self.companion.language_changed.connect(self._language_changed)
+        self.companion.open_translations.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://github.com/dbudakli1402-collab/DenizSideloader"))
+        )
         self.companion.btn_github.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl("https://github.com/dbudakli1402-collab/DenizSideloader"))
         )
@@ -376,6 +396,7 @@ class MainWindow(QMainWindow):
         self.settings_page.open_github.connect(
             lambda: QDesktopServices.openUrl(QUrl("https://github.com/dbudakli1402-collab/DenizSideloader"))
         )
+        self.settings_page.check_updates.connect(lambda: self._check_updates(manual=True))
 
     def _shortcuts(self) -> None:
         sc = QShortcut(QKeySequence("Ctrl+K"), self)
@@ -389,6 +410,8 @@ class MainWindow(QMainWindow):
             ("Ctrl+R", lambda: self.refresh_devices(True)),
             ("Ctrl+P", self._open_pairing),
             ("Ctrl+L", lambda: self._switch(5)),
+            ("Ctrl+Shift+C", self._open_certificates),
+            ("Ctrl+Shift+A", self._open_app_ids),
         ]:
             sc = QShortcut(QKeySequence(seq), self)
             sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
@@ -551,7 +574,11 @@ class MainWindow(QMainWindow):
         else:
             email = s.signing.apple_id_username
         self.companion.load_settings(
-            s.companion.anisette_server, s.companion.anisette_custom, s.companion.use_keyring, email or ""
+            s.companion.anisette_server,
+            s.companion.anisette_custom,
+            s.companion.use_keyring,
+            email or "",
+            s.general.language,
         )
         if self.session.email:
             self.companion.set_login_state(f"Sitzung vorbereitet ({self.session.email}).", True)
@@ -1063,6 +1090,13 @@ class MainWindow(QMainWindow):
         self.history.record("device", f"Pairing gelöscht ({n} Einträge)", status="info")
         self.toasts.success("Pairing gelöscht", f"{n} Einträge entfernt.")
 
+    def _language_changed(self, lang: str) -> None:
+        s = self.settings.settings
+        s.general.language = lang if lang in ("de", "en") else "de"
+        self.settings.save()
+        self.settings_page.load(s)
+        self.toasts.success("Sprache", lang)
+
     def _keyring_toggled(self, dont_use: bool) -> None:
         s = self.settings.settings
         s.companion.use_keyring = not dont_use
@@ -1268,6 +1302,26 @@ class MainWindow(QMainWindow):
         d = QFileDialog.getExistingDirectory(self, "Provisioning-Ordner")
         if d:
             self.settings_page.edit_prov.setText(d)
+
+    def _check_updates(self, manual: bool = False) -> None:
+        from threading import Thread as _Thread
+
+        def _run() -> None:
+            from app import __version__ as _v
+            from app.core.update import check_for_update
+
+            newer, tag, url, _notes = check_for_update(_v)
+            if newer:
+                self.history.record("download", f"Update verfügbar: {tag}", url)
+                self.toasts.info("Update verfügbar", f"{tag} ist da.")
+                if manual:
+                    QDesktopServices.openUrl(
+                        QUrl(url or "https://github.com/dbudakli1402-collab/DenizSideloader/releases")
+                    )
+            elif manual:
+                self.toasts.success("Aktuell", f"Version {_v} ist die neueste.")
+
+        _Thread(target=_run, daemon=True).start()
 
     def maybe_first_launch(self) -> None:
         if not self.settings.settings.first_launch_done:

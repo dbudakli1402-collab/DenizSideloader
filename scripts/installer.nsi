@@ -5,7 +5,7 @@
 !include "LogicLib.nsh"
 
 !define APP_NAME "Deniz Sideloader"
-!define APP_VERSION "1.1.0"
+!define APP_VERSION "1.1.1"
 !define APP_PUBLISHER "Deniz Sideloader Contributors"
 !define APP_URL "https://github.com/dbudakli1402-collab/DenizSideloader"
 !define APP_EXE "DenizSideloader.exe"
